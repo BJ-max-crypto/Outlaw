@@ -31,8 +31,9 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.setOffset(15, 26);
   }
 
-  update(input: MoveInput, delta: number): void {
+  update(input: MoveInput, delta: number, speedScale = 1): void {
     const body = this.body as Phaser.Physics.Arcade.Body;
+    const maxSpeed = TUNING.playerMaxSpeed * speedScale;
     let x = 0;
     let y = 0;
     if (input.left) x -= 1;
@@ -51,11 +52,12 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       this.moving = false;
     }
 
-    body.setAcceleration(x * TUNING.playerAccel, y * TUNING.playerAccel);
+    body.setAcceleration(x * TUNING.playerAccel * speedScale, y * TUNING.playerAccel * speedScale);
+    body.setMaxVelocity(maxSpeed, maxSpeed);
 
     const speed = Math.hypot(body.velocity.x, body.velocity.y);
-    if (speed > TUNING.playerMaxSpeed) {
-      body.velocity.scale(TUNING.playerMaxSpeed / speed);
+    if (speed > maxSpeed) {
+      body.velocity.scale(maxSpeed / speed);
     }
 
     this.walkMs += delta;
@@ -74,6 +76,26 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       this.setAlpha(Math.floor(this.invuln / 80) % 2 === 0 ? 0.55 : 1);
       if (this.invuln <= 0) this.setAlpha(1);
     }
+  }
+
+  setRiding(riding: boolean): void {
+    this.setVisible(!riding);
+    const body = this.body as Phaser.Physics.Arcade.Body;
+    body.setImmovable(riding);
+    if (riding) {
+      body.setVelocity(0, 0);
+      body.setAcceleration(0, 0);
+    }
+  }
+
+  grantSafety(ms: number): void {
+    this.invuln = Math.max(this.invuln, ms);
+    this.setAlpha(1);
+  }
+
+  heal(amount: number): void {
+    if (amount <= 0) return;
+    this.health = Math.min(TUNING.playerHealth, this.health + amount);
   }
 
   hurt(amount: number): boolean {

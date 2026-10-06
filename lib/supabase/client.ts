@@ -4,7 +4,7 @@ let client: SupabaseClient | null = null;
 
 /**
  * Returns a Supabase client when public env vars are present.
- * The heist prototype does not require a connection and keeps playing offline.
+ * Local play does not require a connection. Online presence uses this client when keys exist.
  */
 export function getSupabase(): SupabaseClient | null {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;

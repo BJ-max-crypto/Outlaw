@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Bebas_Neue, Outfit } from "next/font/google";
+import AuthRoot from "@/components/auth/AuthRoot";
 import "./globals.css";
 
 const display = Bebas_Neue({
@@ -15,13 +16,15 @@ const body = Outfit({
 
 export const metadata: Metadata = {
   title: "Runout",
-  description: "Runout is a fast local heist. Rob the store, ditch the cops, reach the van.",
+  description: "Runout is an open city. Work, rob, drive, and eat. A bust takes half your cash.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body className={`${display.variable} ${body.variable} antialiased`}>{children}</body>
+      <body className={`${display.variable} ${body.variable} antialiased`}>
+        <AuthRoot>{children}</AuthRoot>
+      </body>
     </html>
   );
 }

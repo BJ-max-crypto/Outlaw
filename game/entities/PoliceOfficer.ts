@@ -15,6 +15,7 @@ export class PoliceOfficer extends Phaser.Physics.Arcade.Sprite {
   private facing: "n" | "s" | "e" | "w" = "s";
   private awakeAt: number;
   halted = false;
+  seesPlayer = false;
 
   constructor(scene: Phaser.Scene, x: number, y: number, wakeDelay: number, crime: { x: number; y: number }) {
     super(scene, x, y, "cop-s-0");
@@ -38,8 +39,21 @@ export class PoliceOfficer extends Phaser.Physics.Arcade.Sprite {
 
   halt(): void {
     this.halted = true;
+    this.seesPlayer = false;
     const body = this.body as Phaser.Physics.Arcade.Body | null;
     body?.setAcceleration(0, 0);
+    body?.setVelocity(0, 0);
+  }
+
+  alert(crime: { x: number; y: number }, at: { x: number; y: number }): void {
+    this.halted = false;
+    this.seesPlayer = false;
+    this.awakeAt = this.scene.time.now + 280;
+    this.lastX = crime.x;
+    this.lastY = crime.y;
+    this.setPosition(at.x, at.y);
+    this.setAlpha(1);
+    const body = this.body as Phaser.Physics.Arcade.Body | null;
     body?.setVelocity(0, 0);
   }
 
@@ -52,6 +66,7 @@ export class PoliceOfficer extends Phaser.Physics.Arcade.Sprite {
     const body = this.body as Phaser.Physics.Arcade.Body | null;
     if (!body) return;
     if (!active || this.halted || this.scene.time.now < this.awakeAt) {
+      this.seesPlayer = false;
       body.setAcceleration(0, 0);
       if (!active || this.halted) body.setVelocity(0, 0);
       return;
@@ -62,6 +77,7 @@ export class PoliceOfficer extends Phaser.Physics.Arcade.Sprite {
       distance < TUNING.copDetectRange &&
       hasLineOfSight(this.x, this.y, player.x, player.y, blockers);
 
+    this.seesPlayer = sees;
     if (sees) {
       this.lastX = player.x;
       this.lastY = player.y;

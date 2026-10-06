@@ -1,6 +1,6 @@
 # Runout
 
-A local, top-down heist prototype. Rob Quick Stop, survive the chase, reach the van.
+An open city you can keep playing. Work a shift, rob a business, buy or steal a car, buy a boat, and eat when your energy drops. Getting arrested cuts your cash in half. There are no rounds.
 
 ## Run
 
@@ -13,12 +13,16 @@ Open [http://localhost:3000](http://localhost:3000).
 
 ## Controls
 
-- **WASD** or arrow keys to move
-- **Hold E** inside Quick Stop to rob the register
-- Walk into the marked van in the south lot to escape
+- **WASD** or arrow keys to move. The same keys steer a car or boat.
+- **Shift** to sprint. Sprinting spends energy, and low energy slows you down.
+- **E** to buy a car, boat, or business, or to clock in at the night shift.
+- **F** to enter a vehicle, steal a car, or get out.
+- **Hold R** inside a business you do not own to rob the register.
+- **1 / 2 / 3** at the mart to buy food. **G** eats it and restores energy.
+- Click the corner **map** to expand it. **M** toggles it too.
 
-## Notes
+## Online
 
-Supabase is wired as an optional client for later auth and profile saves. Leave `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` empty and the heist still runs offline. Copy `.env.example` when you are ready to connect a project.
+Local play does not need an account. Online play does.
 
-Realtime multiplayer is not implemented. `lib/multiplayer/transport.ts` is the seam a later session layer can implement.
+Copy `.env.example` to `.env.local` and add your Clerk and Supabase keys. Run `supabase/schema.sql` in the Supabase project. Signed-in players share positions on the `runout-city` channel and save cash, energy, job, businesses, and vehicles through `/api/profile`.

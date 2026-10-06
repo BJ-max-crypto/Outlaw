@@ -1,11 +1,11 @@
-/**
- * Future player record. Not read or written by the local prototype.
- * A later auth pass can map this onto a Supabase `profiles` table.
- */
+/** Row shape for `public.profiles`. See supabase/schema.sql. */
 export type PlayerProfile = {
   id: string;
-  display_name: string;
+  display_name: string | null;
   cash: number;
-  heists_completed: number;
+  energy: number;
+  employed: boolean;
+  businesses: string[];
+  vehicles: string[];
   updated_at: string;
 };

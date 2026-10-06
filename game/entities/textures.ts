@@ -94,6 +94,34 @@ export function createActorTextures(scene: Phaser.Scene): void {
   }
 }
 
+export function createRideTextures(scene: Phaser.Scene): void {
+  if (scene.textures.exists("car")) return;
+
+  const car = scene.make.graphics({ x: 0, y: 0 }, false);
+  car.fillStyle(0x000000, 0.28);
+  car.fillEllipse(44, 40, 64, 12);
+  car.fillStyle(0xffffff, 1);
+  car.fillRoundedRect(6, 8, 76, 28, 8);
+  car.fillStyle(0xb7c6d4, 1);
+  car.fillRoundedRect(28, 12, 26, 16, 4);
+  car.fillStyle(0x1a1d22, 1);
+  car.fillCircle(22, 34, 5);
+  car.fillCircle(66, 34, 5);
+  car.generateTexture("car", 88, 48);
+  car.destroy();
+
+  const boat = scene.make.graphics({ x: 0, y: 0 }, false);
+  boat.fillStyle(0x000000, 0.25);
+  boat.fillEllipse(48, 32, 70, 10);
+  boat.fillStyle(0xffffff, 1);
+  boat.fillTriangle(8, 18, 8, 30, 86, 24);
+  boat.fillRoundedRect(18, 8, 28, 16, 4);
+  boat.fillStyle(0x9bb4c6, 1);
+  boat.fillRect(24, 12, 16, 8);
+  boat.generateTexture("boat", 96, 40);
+  boat.destroy();
+}
+
 export function textureKey(kind: "player" | "cop", facing: "n" | "s" | "e" | "w", frame: 0 | 1): string {
   const side = facing === "w" ? "e" : facing;
   return `${kind}-${side}-${frame}`;

@@ -1,5 +1,5 @@
 import Phaser from "phaser";
-import { HeistScene } from "./scenes/HeistScene";
+import { CityScene } from "./scenes/CityScene";
 
 export function createGame(parent: HTMLElement): Phaser.Game {
   const game = new Phaser.Game({
@@ -19,7 +19,7 @@ export function createGame(parent: HTMLElement): Phaser.Game {
         debug: false,
       },
     },
-    scene: [HeistScene],
+    scene: [CityScene],
     input: { keyboard: true },
   });
 
