@@ -1,0 +1,18 @@
+export const TUNING = {
+  playerAccel: 2200,
+  playerDrag: 1250,
+  playerMaxSpeed: 308,
+  copAccel: 1600,
+  copDrag: 1000,
+  copMaxSpeed: 228,
+  copDetectRange: 860,
+  copWakeMs: 750,
+  robberyMs: 2300,
+  takeMin: 280,
+  takeMax: 640,
+  wantedOnRob: 3,
+  maxWanted: 5,
+  playerHealth: 100,
+  copDamage: 12,
+  copHitCooldown: 700,
+} as const;
