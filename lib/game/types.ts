@@ -51,6 +51,7 @@ export type StockQuote = {
   name: string;
   price: number;
   shares: number;
+  history: number[];
 };
 
 export type StockBook = {
@@ -77,4 +78,5 @@ export type GameEventMap = {
   stocks: StockBook | null;
   "stock-order": StockOrder;
   "stocks-close": undefined;
+  escape: number | null;
 };

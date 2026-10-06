@@ -22,4 +22,5 @@ export const TUNING = {
   energySprint: 3.1,
   energyDrive: 0.35,
   bustSafetyMs: 2400,
+  escapeMs: 90000,
 } as const;

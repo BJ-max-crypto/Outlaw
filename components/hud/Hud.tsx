@@ -7,13 +7,14 @@ type HudProps = {
   prompt: string | null;
   robbery: number;
   banner: string | null;
+  escapeMs: number | null;
   map: MapSnapshot | null;
   pos: WorldPos | null;
   mapOpen: boolean;
   onToggleMap: () => void;
 };
 
-export default function Hud({ hud, prompt, robbery, banner, map, pos, mapOpen, onToggleMap }: HudProps) {
+export default function Hud({ hud, prompt, robbery, banner, escapeMs, map, pos, mapOpen, onToggleMap }: HudProps) {
   const healthPct = Math.max(0, Math.min(100, (hud.health / hud.maxHealth) * 100));
   const energyPct = Math.max(0, Math.min(100, (hud.energy / hud.maxEnergy) * 100));
 
@@ -21,8 +22,15 @@ export default function Hud({ hud, prompt, robbery, banner, map, pos, mapOpen, o
     <div className="pointer-events-none absolute inset-0 z-10">
       {hud.wanted > 0 && <div className="heat-vignette absolute inset-0" />}
 
+      {escapeMs !== null && escapeMs > 0 && (
+        <div className="absolute left-1/2 top-4 z-20 -translate-x-1/2 text-center">
+          <p className="text-[12px] font-semibold tracking-[0.42em] text-[#ffb4a8]">GET AWAY</p>
+          <p className="font-display text-8xl leading-none text-white drop-shadow-[0_2px_0_#7f1d1d]">{formatEscape(escapeMs)}</p>
+        </div>
+      )}
+
       {banner && (
-        <div className="rise absolute left-1/2 top-5 z-20 -translate-x-1/2">
+        <div className={`rise absolute left-1/2 z-20 -translate-x-1/2 ${escapeMs ? "top-28" : "top-5"}`}>
           <div className="rounded-full bg-[#b42318] px-4 py-2 text-[11px] font-semibold tracking-[0.22em] text-white">
             {banner}
           </div>
@@ -77,6 +85,13 @@ export default function Hud({ hud, prompt, robbery, banner, map, pos, mapOpen, o
       </div>
     </div>
   );
+}
+
+function formatEscape(ms: number): string {
+  const total = Math.max(0, Math.ceil(ms / 1000));
+  const minutes = Math.floor(total / 60);
+  const seconds = total % 60;
+  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
 }
 
 function Meter({ label, value, color }: { label: string; value: number; color: string }) {

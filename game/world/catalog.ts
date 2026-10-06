@@ -42,6 +42,21 @@ export const STOCKS: StockDef[] = [
   { id: "fuel", name: "FUEL", price: 35 },
 ];
 
+export type MarketQuote = StockDef & { history: number[] };
+
+/** A short price path so each chart is already a line when the desk opens. */
+export function seedQuotes(): MarketQuote[] {
+  return STOCKS.map((stock) => {
+    const history: number[] = [];
+    let price = stock.price;
+    for (let i = 0; i < 16; i += 1) {
+      history.push(Math.round(price));
+      price = Math.min(400, Math.max(8, price * (1 + (Math.random() - 0.5) * 0.1)));
+    }
+    return { id: stock.id, name: stock.name, price: history[history.length - 1], history };
+  });
+}
+
 export function businessById(id: string): BusinessDef | undefined {
   return BUSINESSES.find((business) => business.id === id);
 }

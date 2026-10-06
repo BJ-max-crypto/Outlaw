@@ -60,13 +60,10 @@ export class CityState {
     return true;
   }
 
-  /**
-   * Port wages pay only while `inJob` is true. Stepping outside clears the
-   * wage timer. Business income keeps running on its own timer.
-   */
-  tickIncome(delta: number, inJob: boolean): number {
+  /** Wages follow you after you clock in. Business income has its own timer. */
+  tickIncome(delta: number): number {
     let pay = 0;
-    if (!this.employed || !inJob) {
+    if (!this.employed) {
       this.jobMs = 0;
     } else {
       this.jobMs += delta;

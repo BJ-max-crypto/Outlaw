@@ -2,7 +2,7 @@ import Phaser from "phaser";
 import type { MapMarker } from "@/lib/game/types";
 import { BUSINESSES, type BusinessDef } from "@/game/world/catalog";
 import { MAP_SCALE, SOURCE_SIZE } from "./waterMask";
-import type { Rect } from "./geometry";
+import { perimeter, type Rect } from "./geometry";
 
 export type PlacedRide = {
   id: string;
@@ -26,6 +26,7 @@ export type CityMap = {
   jobZone: Rect;
   stockZone: Rect;
   pierZone: Rect;
+  dockZones: Rect[];
   rides: PlacedRide[];
   playerSpawn: { x: number; y: number };
   bustSpawn: { x: number; y: number };
@@ -41,6 +42,12 @@ function zone(x: number, y: number, w: number, h: number): Rect {
 
 function at(x: number, y: number): { x: number; y: number } {
   return { x: x * MAP_SCALE, y: y * MAP_SCALE };
+}
+
+function shell(x: number, y: number, w: number, h: number, door = 96): Rect[] {
+  const rect = zone(x, y, w, h);
+  const size = door * MAP_SCALE;
+  return perimeter(rect, { side: "south", x: rect.x + (rect.w - size) / 2, size });
 }
 
 const zones = {
@@ -68,23 +75,31 @@ export function buildCityMap(): CityMap {
   }));
   return {
     world: WORLD,
-    walls: [],
+    walls: [
+      ...shell(213, 171, 283, 223),
+      ...shell(182, 529, 315, 253, 120),
+      ...shell(218, 846, 229, 144),
+      ...shell(522, 540, 215, 238),
+      ...shell(521, 843, 218, 190),
+      ...shell(806, 641, 248, 276),
+    ],
     water: { x: 0, y: 0, w: 0, h: 0 },
     businesses,
     groceryZone: zones.grocery,
-    jobZone: zone(820, 250, 180, 120),
+    jobZone: zone(860, 300, 150, 110),
     stockZone: zone(840, 680, 180, 160),
-    pierZone: zone(1024, 436, 100, 28),
+    pierZone: zone(1024, 432, 100, 28),
+    dockZones: [zone(880, 270, 160, 190), zone(980, 418, 170, 52)],
     rides: [
-      { id: "white", kind: "car", texture: "car-white", ...at(290, 660), heading: 0, name: "SEDAN", speed: 430 },
-      { id: "red", kind: "car", texture: "car-red", ...at(350, 660), heading: 0, name: "STRIPE", speed: 470 },
-      { id: "blue", kind: "car", texture: "car-blue", ...at(410, 660), heading: 0, name: "COUPE", speed: 500 },
-      { id: "olive", kind: "car", texture: "car-olive", ...at(310, 730), heading: 0, name: "SUV", speed: 400 },
-      { id: "yellow", kind: "car", texture: "car-yellow", ...at(380, 730), heading: 0, name: "RACER", speed: 540 },
-      { id: "skiff", kind: "boat", texture: "boat-white", ...at(1120, 340), heading: 0, name: "SKIFF", speed: 280 },
-      { id: "launch", kind: "boat", texture: "boat-wood", ...at(1180, 400), heading: 0.4, name: "LAUNCH", speed: 300 },
-      { id: "rib", kind: "boat", texture: "boat-black", ...at(1140, 260), heading: -0.3, name: "RIB", speed: 320 },
-      { id: "yacht", kind: "boat", texture: "boat-deck", ...at(1210, 360), heading: 0.2, name: "YACHT", speed: 290 },
+      { id: "white", kind: "car", texture: "car-white", ...at(250, 610), heading: 0, name: "SEDAN", speed: 430 },
+      { id: "red", kind: "car", texture: "car-red", ...at(330, 610), heading: 0, name: "STRIPE", speed: 470 },
+      { id: "blue", kind: "car", texture: "car-blue", ...at(410, 610), heading: 0, name: "COUPE", speed: 500 },
+      { id: "olive", kind: "car", texture: "car-olive", ...at(280, 700), heading: 0, name: "SUV", speed: 400 },
+      { id: "yellow", kind: "car", texture: "car-yellow", ...at(380, 700), heading: 0, name: "RACER", speed: 540 },
+      { id: "skiff", kind: "boat", texture: "boat-white", ...at(1024, 392), heading: 0, name: "SKIFF", speed: 280 },
+      { id: "launch", kind: "boat", texture: "boat-wood", ...at(1184, 448), heading: 0.4, name: "LAUNCH", speed: 300 },
+      { id: "rib", kind: "boat", texture: "boat-black", ...at(1076, 304), heading: -0.2, name: "RIB", speed: 320 },
+      { id: "yacht", kind: "boat", texture: "boat-deck", ...at(1032, 352), heading: 0.15, name: "YACHT", speed: 290 },
     ],
     playerSpawn: at(470, 430),
     bustSpawn: at(500, 480),
@@ -106,6 +121,11 @@ export function paintCity(scene: Phaser.Scene): void {
   scene.add.image(0, 0, "island").setOrigin(0, 0).setScale(MAP_SCALE).setDepth(0);
 }
 
-export function createWallBodies(scene: Phaser.Scene): Phaser.Physics.Arcade.StaticGroup {
-  return scene.physics.add.staticGroup();
+export function createWallBodies(scene: Phaser.Scene, walls: Rect[]): Phaser.Physics.Arcade.StaticGroup {
+  const group = scene.physics.add.staticGroup();
+  for (const wall of walls) {
+    const body = scene.add.rectangle(wall.x + wall.w / 2, wall.y + wall.h / 2, wall.w, wall.h, 0x000000, 0);
+    group.add(body);
+  }
+  return group;
 }

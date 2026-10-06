@@ -16,7 +16,7 @@ export function rectContains(rect: Rect, x: number, y: number, pad = 0): boolean
 
 type DoorGap = { side: "south"; x: number; size: number };
 
-const TH = 28;
+const TH = 36;
 
 function splitHorizontal(wall: Rect, gapX: number, gapW: number): Rect[] {
   const left = gapX - wall.x;

@@ -23,7 +23,7 @@ const initialHud: HudSnapshot = {
   maxEnergy: TUNING.maxEnergy,
   wanted: 0,
   maxWanted: TUNING.maxWanted,
-  objective: "Drive or steal a ride, work the port, or invest on the stock floor.",
+  objective: "Drive or steal a ride, clock in at the port, or invest on the stock floor.",
   food: 0,
   employed: false,
   businesses: [],
@@ -57,6 +57,7 @@ export default function RunoutApp() {
   const [pos, setPos] = useState<WorldPos | null>(null);
   const [mapOpen, setMapOpen] = useState(false);
   const [stocks, setStocks] = useState<StockBook | null>(null);
+  const [escapeMs, setEscapeMs] = useState<number | null>(null);
 
   useEffect(() => {
     const unsub = [
@@ -68,6 +69,7 @@ export default function RunoutApp() {
       gameBus.on("pos", setPos),
       gameBus.on("map-toggle", () => setMapOpen((open) => !open)),
       gameBus.on("stocks", setStocks),
+      gameBus.on("escape", setEscapeMs),
     ];
     return () => {
       for (const off of unsub) off();
@@ -99,6 +101,7 @@ export default function RunoutApp() {
           prompt={prompt}
           robbery={robbery}
           banner={banner}
+          escapeMs={escapeMs}
           map={map}
           pos={pos}
           mapOpen={mapOpen}

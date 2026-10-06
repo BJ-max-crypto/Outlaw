@@ -1,6 +1,6 @@
 # Runout
 
-An open island you can keep playing. Drive or steal a car, take a boat from the pier, work the port, invest in stocks, and eat when your energy drops. Port wages stop the moment you leave the port. Getting arrested cuts your cash in half. There are no rounds.
+An open island you can keep playing. Drive or steal a car, take a boat from the dock, clock in at the port, and the wages follow you. Each stock on the desk has its own chart. When the cops come, survive for a minute and a half and they break off. Getting arrested cuts your cash in half. There are no rounds.
 
 ## Run
 
@@ -16,7 +16,10 @@ Open [http://localhost:3000](http://localhost:3000).
 - **WASD** or arrow keys to move. The same keys steer a car or boat.
 - **Shift** to sprint. Sprinting spends energy, and low energy slows you down.
 - **E** to drive a vehicle, clock in at the port, buy a business, or open the stock desk.
-- **F** to steal a vehicle without getting in, or to get out. Walking up to one does not start it.
+- **F** to steal a vehicle without getting in, or to get out. A car stays still until you release the keys and accelerate.
+- Building walls block you. Doors face the road.
+- After you clock in, shift pay continues anywhere on the island.
+- A chase lasts 90 seconds. The timer at the top is how long until the cops quit.
 - **Hold R** inside a business you do not own to rob the register.
 - **1 / 2 / 3** at the grocery to buy food. **G** eats it and restores energy.
 - **Pinch** with two fingers to zoom the island. A trackpad pinch (ctrl + scroll) does the same. You stay in the center of the screen.
