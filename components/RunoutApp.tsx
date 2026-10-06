@@ -5,10 +5,11 @@ import CityLink from "@/components/auth/CityLink";
 import GameCanvas from "@/components/game/GameCanvas";
 import Hud from "@/components/hud/Hud";
 import MainMenu from "@/components/hud/MainMenu";
+import StockDesk from "@/components/hud/StockDesk";
 import { primeAudio } from "@/game/audio/siren";
 import { TUNING } from "@/game/tuning";
 import { gameBus } from "@/lib/game/bus";
-import type { CityProfile, HudSnapshot, MapSnapshot, WorldPos } from "@/lib/game/types";
+import type { CityProfile, HudSnapshot, MapSnapshot, StockBook, WorldPos } from "@/lib/game/types";
 
 type Screen = "menu" | "play";
 
@@ -22,7 +23,7 @@ const initialHud: HudSnapshot = {
   maxEnergy: TUNING.maxEnergy,
   wanted: 0,
   maxWanted: TUNING.maxWanted,
-  objective: "Work a shift, rob a spot, or take a car. The city does not end.",
+  objective: "Drive or steal a ride, work the port, or invest on the stock floor.",
   food: 0,
   employed: false,
   businesses: [],
@@ -55,6 +56,7 @@ export default function RunoutApp() {
   const [map, setMap] = useState<MapSnapshot | null>(null);
   const [pos, setPos] = useState<WorldPos | null>(null);
   const [mapOpen, setMapOpen] = useState(false);
+  const [stocks, setStocks] = useState<StockBook | null>(null);
 
   useEffect(() => {
     const unsub = [
@@ -65,6 +67,7 @@ export default function RunoutApp() {
       gameBus.on("map", setMap),
       gameBus.on("pos", setPos),
       gameBus.on("map-toggle", () => setMapOpen((open) => !open)),
+      gameBus.on("stocks", setStocks),
     ];
     return () => {
       for (const off of unsub) off();
@@ -100,6 +103,13 @@ export default function RunoutApp() {
           pos={pos}
           mapOpen={mapOpen}
           onToggleMap={() => setMapOpen((open) => !open)}
+        />
+      )}
+      {screen === "play" && stocks && (
+        <StockDesk
+          book={stocks}
+          onOrder={(order) => gameBus.emit("stock-order", order)}
+          onClose={() => gameBus.emit("stocks-close")}
         />
       )}
       {screen === "play" && online && clerkEnabled && <CityLink hud={hud} />}

@@ -46,6 +46,23 @@ export type Peer = {
   at: number;
 };
 
+export type StockQuote = {
+  id: string;
+  name: string;
+  price: number;
+  shares: number;
+};
+
+export type StockBook = {
+  cash: number;
+  quotes: StockQuote[];
+};
+
+export type StockOrder = {
+  id: string;
+  side: "buy" | "sell";
+};
+
 export type GameEventMap = {
   start: undefined;
   hud: HudSnapshot;
@@ -57,4 +74,7 @@ export type GameEventMap = {
   "map-toggle": undefined;
   profile: CityProfile;
   peers: Peer[];
+  stocks: StockBook | null;
+  "stock-order": StockOrder;
+  "stocks-close": undefined;
 };

@@ -1,18 +1,25 @@
 import Phaser from "phaser";
 import { gameBus } from "@/lib/game/bus";
-import type { CityProfile, Peer } from "@/lib/game/types";
+import type { CityProfile, Peer, StockOrder } from "@/lib/game/types";
 import { Siren } from "@/game/audio/siren";
 import { Player, type MoveInput } from "@/game/entities/Player";
-import { createActorTextures, createRideTextures } from "@/game/entities/textures";
+import { createActorTextures } from "@/game/entities/textures";
 import { Vehicle } from "@/game/entities/Vehicle";
 import { buildCityMap, closestSpawns, createWallBodies, paintCity, type PlacedBusiness } from "@/game/map/cityMap";
 import { rectContains } from "@/game/map/geometry";
+import { isWaterWorld } from "@/game/map/waterMask";
 import { CityState } from "@/game/state/CityState";
 import { PoliceDirector } from "@/game/systems/PoliceDirector";
 import { RobberySystem } from "@/game/systems/RobberySystem";
 import { WantedSystem } from "@/game/systems/WantedSystem";
 import { TUNING } from "@/game/tuning";
-import { FOODS, type FoodItem } from "@/game/world/catalog";
+import { FOODS, STOCKS, type FoodItem } from "@/game/world/catalog";
+
+const ZOOM_MIN = 0.55;
+const ZOOM_MAX = 2.5;
+const CAR_REACH = 88;
+const BOAT_REACH = 140;
+const PIER_REACH = 420;
 
 export class CityScene extends Phaser.Scene {
   private state!: CityState;
@@ -33,15 +40,24 @@ export class CityScene extends Phaser.Scene {
   private recoverUntil = 0;
   private decayMs = 0;
   private posMs = 0;
+  private marketMs = 0;
   private lastHudKey = "";
   private lastProgress = -1;
   private lastPrompt: string | null = null;
   private bannerToken = 0;
   private robReadyAt = new Map<string, number>();
   private peers = new Map<string, { sprite: Phaser.GameObjects.Sprite; label: Phaser.GameObjects.Text }>();
+  private feet = new WeakMap<object, { x: number; y: number }>();
+  private quotes = STOCKS.map((stock) => ({ ...stock }));
+  private stockOpen = false;
+  private viewZoom = 1.52;
+  private lastPinch = 0;
   private offStart: (() => void) | null = null;
   private offProfile: (() => void) | null = null;
   private offPeers: (() => void) | null = null;
+  private offOrder: (() => void) | null = null;
+  private offStocksClose: (() => void) | null = null;
+  private onWheel?: (event: WheelEvent) => void;
   private keys!: {
     up: Phaser.Input.Keyboard.Key;
     down: Phaser.Input.Keyboard.Key;
@@ -64,6 +80,22 @@ export class CityScene extends Phaser.Scene {
     super("city");
   }
 
+  preload(): void {
+    this.load.image("island", "/map/island.png");
+    const files = [
+      "car-white",
+      "car-red",
+      "car-blue",
+      "car-olive",
+      "car-yellow",
+      "boat-white",
+      "boat-wood",
+      "boat-black",
+      "boat-deck",
+    ];
+    for (const file of files) this.load.image(file, `/vehicles/${file}.png`);
+  }
+
   create(): void {
     this.state = new CityState();
     this.map = buildCityMap();
@@ -74,19 +106,24 @@ export class CityScene extends Phaser.Scene {
     this.recoverUntil = 0;
     this.decayMs = 0;
     this.posMs = 0;
+    this.marketMs = 0;
     this.lastHudKey = "";
     this.lastProgress = -1;
     this.lastPrompt = null;
     this.bannerToken = 0;
     this.robReadyAt.clear();
     this.peers.clear();
+    this.feet = new WeakMap();
+    this.quotes = STOCKS.map((stock) => ({ ...stock }));
+    this.stockOpen = false;
+    this.viewZoom = 1.52;
+    this.lastPinch = 0;
     this.siren = new Siren();
 
-    paintCity(this, this.map);
+    paintCity(this);
     createActorTextures(this);
-    createRideTextures(this);
-    this.walls = createWallBodies(this, this.map.walls);
-    this.blockers = this.map.walls.map((wall) => new Phaser.Geom.Rectangle(wall.x, wall.y, wall.w, wall.h));
+    this.walls = createWallBodies(this);
+    this.blockers = [];
     this.physics.world.setBounds(0, 0, this.map.world.width, this.map.world.height);
 
     this.player = new Player(this, this.map.playerSpawn.x, this.map.playerSpawn.y);
@@ -109,10 +146,15 @@ export class CityScene extends Phaser.Scene {
     });
 
     this.bindKeys();
-    this.cameras.main.setBounds(0, 0, this.map.world.width, this.map.world.height);
-    this.cameras.main.startFollow(this.player, true, 0.16, 0.16);
-    this.cameras.main.setZoom(1.12);
+    this.bindZoom();
+    const camera = this.cameras.main;
+    camera.stopFollow();
+    camera.setBackgroundColor("#0c4c78");
+    camera.setRoundPixels(false);
+    camera.setZoom(this.viewZoom);
+    camera.centerOn(this.player.x, this.player.y);
     this.game.canvas.tabIndex = 1;
+    this.game.canvas.style.touchAction = "none";
 
     this.offStart = gameBus.on("start", () => {
       if (this.live) return;
@@ -122,12 +164,20 @@ export class CityScene extends Phaser.Scene {
     });
     this.offProfile = gameBus.on("profile", (profile) => this.applyProfile(profile));
     this.offPeers = gameBus.on("peers", (list) => this.syncPeers(list));
+    this.offOrder = gameBus.on("stock-order", (order) => this.trade(order));
+    this.offStocksClose = gameBus.on("stocks-close", () => this.closeStocks());
 
+    this.events.on(Phaser.Scenes.Events.POST_UPDATE, this.onPostUpdate, this);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.events.off(Phaser.Scenes.Events.POST_UPDATE, this.onPostUpdate, this);
       this.offStart?.();
       this.offProfile?.();
       this.offPeers?.();
+      this.offOrder?.();
+      this.offStocksClose?.();
+      if (this.onWheel) this.game.canvas.removeEventListener("wheel", this.onWheel);
       this.siren.stop();
+      this.closeStocks();
       for (const peer of this.peers.values()) {
         peer.sprite.destroy();
         peer.label.destroy();
@@ -143,6 +193,8 @@ export class CityScene extends Phaser.Scene {
     gameBus.emit("robbery", 0);
     gameBus.emit("prompt", null);
     gameBus.emit("banner", null);
+    gameBus.emit("stocks", null);
+    this.contain();
     this.pushHud();
   }
 
@@ -165,8 +217,10 @@ export class CityScene extends Phaser.Scene {
     }
 
     this.drainEnergy(delta, input);
-    const pay = this.state.tickIncome(delta);
+    const pay = this.state.tickIncome(delta, this.inJob());
     if (pay > 0) this.popup(this.player.x, this.player.y - 36, `+$${pay}`, "#d7c08a");
+    this.tickMarket(delta);
+    if (this.stockOpen && !this.inStock()) this.closeStocks();
 
     this.decayWanted(delta);
     this.handleActions();
@@ -188,6 +242,78 @@ export class CityScene extends Phaser.Scene {
       const target = this.riding ?? this.player;
       gameBus.emit("pos", { x: target.x, y: target.y });
     }
+  }
+
+  private onPostUpdate(): void {
+    if (!this.player) return;
+    if (this.live) this.readPinch();
+    this.contain();
+    const camera = this.cameras.main;
+    camera.setZoom(this.viewZoom);
+    const target = this.riding ?? this.player;
+    camera.centerOn(target.x, target.y);
+  }
+
+  private bindZoom(): void {
+    this.input.addPointer(2);
+    this.onWheel = (event: WheelEvent) => {
+      if (!(event.ctrlKey || event.metaKey)) return;
+      event.preventDefault();
+      if (!this.live) return;
+      const direction = event.deltaY > 0 ? -1 : 1;
+      const magnitude = Math.min(0.22, Math.abs(event.deltaY) * 0.01);
+      this.viewZoom = Phaser.Math.Clamp(this.viewZoom + direction * Math.max(0.04, magnitude), ZOOM_MIN, ZOOM_MAX);
+    };
+    this.game.canvas.addEventListener("wheel", this.onWheel, { passive: false });
+  }
+
+  private readPinch(): void {
+    const a = this.input.pointer1;
+    const b = this.input.pointer2;
+    if (!a?.isDown || !b?.isDown) {
+      this.lastPinch = 0;
+      return;
+    }
+    const dist = Phaser.Math.Distance.Between(a.x, a.y, b.x, b.y);
+    if (this.lastPinch > 12) {
+      this.viewZoom = Phaser.Math.Clamp(this.viewZoom * (dist / this.lastPinch), ZOOM_MIN, ZOOM_MAX);
+    }
+    this.lastPinch = dist;
+  }
+
+  private contain(): void {
+    this.keepLand(this.player, this.map.playerSpawn);
+    for (const ride of this.rides) {
+      if (ride.kind === "boat") this.keepWater(ride);
+      else this.keepLand(ride, { x: ride.homeX, y: ride.homeY });
+    }
+    for (const officer of this.police.officers) {
+      this.keepLand(officer, this.map.playerSpawn);
+    }
+  }
+
+  private keepLand(sprite: Phaser.Physics.Arcade.Sprite, fallback: { x: number; y: number }): void {
+    const body = sprite.body as Phaser.Physics.Arcade.Body | null;
+    if (!isWaterWorld(sprite.x, sprite.y)) {
+      this.feet.set(sprite, { x: sprite.x, y: sprite.y });
+      return;
+    }
+    const last = this.feet.get(sprite) ?? fallback;
+    sprite.setPosition(last.x, last.y);
+    body?.setVelocity(0, 0);
+    if (sprite instanceof Vehicle) sprite.speed = 0;
+  }
+
+  private keepWater(ride: Vehicle): void {
+    const body = ride.body as Phaser.Physics.Arcade.Body;
+    if (isWaterWorld(ride.x, ride.y)) {
+      this.feet.set(ride, { x: ride.x, y: ride.y });
+      return;
+    }
+    const last = this.feet.get(ride) ?? { x: ride.homeX, y: ride.homeY };
+    ride.setPosition(last.x, last.y);
+    body.setVelocity(0, 0);
+    ride.speed = 0;
   }
 
   private bindKeys(): void {
@@ -268,13 +394,18 @@ export class CityScene extends Phaser.Scene {
       if (just(key)) this.buyFood(index);
     });
     if (just(this.keys.e)) this.confirm();
-    if (just(this.keys.f) && this.rideLock <= 0) this.useRide();
+    if (just(this.keys.f) && this.rideLock <= 0) this.stealFocused();
   }
 
   private confirm(): void {
     const ride = this.focusRide();
-    if (ride?.forSale && !ride.owned) {
-      this.buyRide(ride);
+    if (ride) {
+      this.driveRide(ride);
+      return;
+    }
+    if (this.inStock()) {
+      if (this.stockOpen) this.closeStocks();
+      else this.openStocks();
       return;
     }
     if (this.inJob() && !this.state.employed) {
@@ -293,43 +424,41 @@ export class CityScene extends Phaser.Scene {
     this.popup(this.player.x, this.player.y - 28, spot.name, "#d7c08a");
   }
 
-  private useRide(): void {
+  private stealFocused(): void {
     const ride = this.focusRide();
-    if (!ride) return;
-    if (!ride.owned) {
-      if (ride.kind === "boat") return;
-      ride.owned = true;
-      ride.stolen = true;
-      this.state.ownedVehicles.add(ride.id);
-      ride.refreshLabel();
-      this.onCrime(ride.forSale ? 2 : 1, "STOLEN");
-    }
+    if (!ride || ride.owned) return;
+    this.markStolen(ride);
+  }
+
+  private driveRide(ride: Vehicle): void {
+    if (!ride.owned) this.markStolen(ride);
     this.mount(ride);
   }
 
-  private buyRide(ride: Vehicle): void {
-    if (!this.state.spend(ride.price)) {
-      this.popup(ride.x, ride.y - 40, "NEED CASH", "#f4f1ea");
-      return;
-    }
+  private markStolen(ride: Vehicle): void {
     ride.owned = true;
-    ride.stolen = false;
+    ride.stolen = true;
+    ride.speed = 0;
+    const body = ride.body as Phaser.Physics.Arcade.Body;
+    body.setVelocity(0, 0);
     this.state.ownedVehicles.add(ride.id);
     ride.refreshLabel();
-    this.popup(ride.x, ride.y - 40, ride.name, "#d7c08a");
-    this.mount(ride);
+    this.onCrime(ride.kind === "boat" ? 2 : 1, "STOLEN");
   }
 
   private mount(ride: Vehicle): void {
     this.riding = ride;
     ride.occupied = true;
+    ride.speed = 0;
+    ride.throttleLock = 450;
     const body = ride.body as Phaser.Physics.Arcade.Body;
+    body.setVelocity(0, 0);
     body.setImmovable(false);
     this.player.setRiding(true);
+    this.player.setPosition(ride.x, ride.y);
     this.footWalls.active = false;
     this.playerRides.active = false;
     this.rideLock = 320;
-    this.follow(ride);
     ride.refreshLabel();
   }
 
@@ -338,18 +467,23 @@ export class CityScene extends Phaser.Scene {
     if (!ride) return;
     ride.park();
     if (ride.kind === "boat") {
-      const dock = this.map.dockZone;
-      this.player.setPosition(dock.x + dock.w / 2, dock.y + dock.h / 2);
+      const pier = this.map.pierZone;
+      this.player.setPosition(pier.x + pier.w / 2, pier.y + pier.h / 2);
     } else {
-      const side = ride.heading + Math.PI / 2;
-      this.player.setPosition(ride.x + Math.cos(side) * 52, ride.y + Math.sin(side) * 52);
+      const side = ride.heading;
+      const spots = [1, -1].map((sign) => ({
+        x: ride.x + Math.cos(side) * 48 * sign,
+        y: ride.y + Math.sin(side) * 48 * sign,
+      }));
+      const spot = spots.find((point) => !isWaterWorld(point.x, point.y)) ?? this.map.playerSpawn;
+      this.player.setPosition(spot.x, spot.y);
     }
+    this.feet.set(this.player, { x: this.player.x, y: this.player.y });
     this.player.setRiding(false);
     this.riding = null;
     this.footWalls.active = true;
     this.playerRides.active = true;
     this.rideLock = 320;
-    this.follow(this.player);
   }
 
   private buyFood(index: number): void {
@@ -378,6 +512,63 @@ export class CityScene extends Phaser.Scene {
     this.state.energy = Math.min(this.state.maxEnergy, this.state.energy + food.energy);
     this.player.heal(food.health);
     this.popup(this.player.x, this.player.y - 28, `+${food.energy} ENERGY`, "#7dcea0");
+  }
+
+  private openStocks(): void {
+    this.stockOpen = true;
+    this.emitStocks();
+  }
+
+  private closeStocks(): void {
+    if (!this.stockOpen) {
+      gameBus.emit("stocks", null);
+      return;
+    }
+    this.stockOpen = false;
+    gameBus.emit("stocks", null);
+  }
+
+  private emitStocks(): void {
+    gameBus.emit("stocks", {
+      cash: this.state.cash,
+      quotes: this.quotes.map((quote) => ({
+        id: quote.id,
+        name: quote.name,
+        price: quote.price,
+        shares: this.state.sharesOf(quote.id),
+      })),
+    });
+  }
+
+  private trade(order: StockOrder): void {
+    if (!this.stockOpen) return;
+    const quote = this.quotes.find((item) => item.id === order.id);
+    if (!quote) return;
+    if (order.side === "buy") {
+      if (!this.state.spend(quote.price)) {
+        this.popup(this.player.x, this.player.y - 28, "NEED CASH", "#f4f1ea");
+        this.emitStocks();
+        return;
+      }
+      this.state.addShare(quote.id);
+      this.popup(this.player.x, this.player.y - 28, quote.name, "#d7c08a");
+    } else if (this.state.takeShare(quote.id)) {
+      this.state.cash += quote.price;
+      this.popup(this.player.x, this.player.y - 28, `+$${quote.price}`, "#7dcea0");
+    }
+    this.emitStocks();
+    this.pushHud();
+  }
+
+  private tickMarket(delta: number): void {
+    this.marketMs += delta;
+    if (this.marketMs < 3000) return;
+    this.marketMs = 0;
+    for (const quote of this.quotes) {
+      const next = quote.price * (1 + (Math.random() - 0.5) * 0.12);
+      quote.price = Math.round(Math.min(400, Math.max(8, next)));
+    }
+    if (this.stockOpen) this.emitStocks();
   }
 
   private runRobbery(delta: number): void {
@@ -430,6 +621,7 @@ export class CityScene extends Phaser.Scene {
       }
     }
     this.player.setPosition(this.map.bustSpawn.x, this.map.bustSpawn.y);
+    this.feet.set(this.player, { x: this.player.x, y: this.player.y });
     this.player.health = TUNING.playerHealth;
     this.player.grantSafety(TUNING.bustSafetyMs);
     this.state.energy = 50;
@@ -484,20 +676,27 @@ export class CityScene extends Phaser.Scene {
 
   private focusRide(): Vehicle | null {
     let best: Vehicle | null = null;
-    let bestD = 78;
+    let bestD = Number.POSITIVE_INFINITY;
     for (const ride of this.rides) {
       if (ride.occupied) continue;
       const distance = Phaser.Math.Distance.Between(this.player.x, this.player.y, ride.x, ride.y);
-      if (distance < bestD) {
+      const limit = ride.kind === "boat" ? BOAT_REACH : CAR_REACH;
+      if (distance < limit && distance < bestD) {
         best = ride;
         bestD = distance;
       }
     }
     if (best) return best;
-    if (rectContains(this.map.dockZone, this.player.x, this.player.y)) {
-      return this.rides.find((ride) => ride.kind === "boat") ?? null;
+    if (!rectContains(this.map.pierZone, this.player.x, this.player.y)) return null;
+    for (const ride of this.rides) {
+      if (ride.kind !== "boat" || ride.occupied) continue;
+      const distance = Phaser.Math.Distance.Between(this.player.x, this.player.y, ride.x, ride.y);
+      if (distance < PIER_REACH && distance < bestD) {
+        best = ride;
+        bestD = distance;
+      }
     }
-    return null;
+    return best;
   }
 
   private businessAt(): PlacedBusiness | null {
@@ -505,7 +704,12 @@ export class CityScene extends Phaser.Scene {
   }
 
   private inJob(): boolean {
-    return rectContains(this.map.jobZone, this.player.x, this.player.y);
+    const target = this.riding ?? this.player;
+    return rectContains(this.map.jobZone, target.x, target.y);
+  }
+
+  private inStock(): boolean {
+    return !this.riding && rectContains(this.map.stockZone, this.player.x, this.player.y);
   }
 
   private canRob(id: string): boolean {
@@ -513,7 +717,7 @@ export class CityScene extends Phaser.Scene {
   }
 
   private foodPrice(food: FoodItem): number {
-    if (!this.state.owns("mart")) return food.price;
+    if (!this.state.owns("grocery")) return food.price;
     return Math.max(1, Math.ceil(food.price * 0.8));
   }
 
@@ -528,11 +732,11 @@ export class CityScene extends Phaser.Scene {
     if (this.riding) return "F EXIT";
     const ride = this.focusRide();
     if (ride) {
-      if (ride.owned) return ride.kind === "boat" ? "F BOARD" : "F ENTER";
-      if (ride.forSale) return `E BUY ${ride.name} $${ride.price}${ride.kind === "car" ? " · F STEAL" : ""}`;
-      return "F STEAL";
+      if (ride.owned) return `E DRIVE ${ride.name}`;
+      return `E DRIVE · F STEAL ${ride.name}`;
     }
     const lines: string[] = [];
+    if (this.inStock()) lines.push(this.stockOpen ? "E CLOSE" : "E INVEST");
     if (this.inJob()) lines.push(this.state.employed ? "ON THE CLOCK" : "E CLOCK IN");
     const spot = this.businessAt();
     if (spot && !this.state.owns(spot.id)) {
@@ -550,12 +754,9 @@ export class CityScene extends Phaser.Scene {
 
   private hint(): string {
     if (this.state.wanted > 0) return "Lose the cops. Getting busted cuts your cash in half.";
-    if (this.state.employed) return "Shift pay is on. Buy food when your energy drops.";
-    return "Work a shift, rob a spot, or take a car. The city does not end.";
-  }
-
-  private follow(target: Phaser.GameObjects.Components.Transform): void {
-    this.cameras.main.startFollow(target, true, 0.16, 0.16);
+    if (this.state.employed && !this.inJob()) return "Port pay is paused until you stand inside the port.";
+    if (this.state.employed) return "Shift pay is on while you stay in the port.";
+    return "Drive or steal a ride, work the port, or invest on the stock floor.";
   }
 
   private pushHud(): void {

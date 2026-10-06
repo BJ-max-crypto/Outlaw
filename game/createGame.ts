@@ -5,7 +5,7 @@ export function createGame(parent: HTMLElement): Phaser.Game {
   const game = new Phaser.Game({
     type: Phaser.AUTO,
     parent,
-    backgroundColor: "#0e0f12",
+    backgroundColor: "#0c4c78",
     banner: false,
     scale: {
       mode: Phaser.Scale.RESIZE,

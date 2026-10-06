@@ -14,7 +14,9 @@ export class CityState {
   food: FoodItem[] = [];
   readonly ownedBusinesses = new Set<string>();
   readonly ownedVehicles = new Set<string>();
-  private incomeMs = 0;
+  private shares = new Map<string, number>();
+  private jobMs = 0;
+  private bizMs = 0;
 
   constructor(cash = TUNING.startingCash) {
     this.cash = cash;
@@ -42,12 +44,42 @@ export class CityState {
     return this.food.shift() ?? null;
   }
 
-  tickIncome(delta: number): number {
-    this.incomeMs += delta;
-    if (this.incomeMs < TUNING.jobIntervalMs) return 0;
-    this.incomeMs -= TUNING.jobIntervalMs;
-    let pay = this.employed ? TUNING.jobPay : 0;
-    for (const id of this.ownedBusinesses) pay += businessById(id)?.income ?? 0;
+  sharesOf(id: string): number {
+    return this.shares.get(id) ?? 0;
+  }
+
+  addShare(id: string): void {
+    this.shares.set(id, this.sharesOf(id) + 1);
+  }
+
+  takeShare(id: string): boolean {
+    const count = this.sharesOf(id);
+    if (count <= 0) return false;
+    if (count === 1) this.shares.delete(id);
+    else this.shares.set(id, count - 1);
+    return true;
+  }
+
+  /**
+   * Port wages pay only while `inJob` is true. Stepping outside clears the
+   * wage timer. Business income keeps running on its own timer.
+   */
+  tickIncome(delta: number, inJob: boolean): number {
+    let pay = 0;
+    if (!this.employed || !inJob) {
+      this.jobMs = 0;
+    } else {
+      this.jobMs += delta;
+      if (this.jobMs >= TUNING.jobIntervalMs) {
+        this.jobMs -= TUNING.jobIntervalMs;
+        pay += TUNING.jobPay;
+      }
+    }
+    this.bizMs += delta;
+    if (this.bizMs >= TUNING.jobIntervalMs) {
+      this.bizMs -= TUNING.jobIntervalMs;
+      for (const id of this.ownedBusinesses) pay += businessById(id)?.income ?? 0;
+    }
     if (pay <= 0) return 0;
     this.cash += pay;
     return pay;

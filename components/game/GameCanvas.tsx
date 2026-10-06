@@ -32,7 +32,7 @@ export default function GameCanvas({ onReady }: GameCanvasProps) {
   return (
     <div
       ref={hostRef}
-      className="absolute inset-0"
+      className="absolute inset-0 touch-none"
       onPointerDown={() => {
         hostRef.current?.querySelector("canvas")?.focus();
       }}

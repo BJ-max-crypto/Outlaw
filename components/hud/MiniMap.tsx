@@ -43,16 +43,15 @@ export default function MiniMap({ map, pos, open, onToggle }: MiniMapProps) {
 
 function CityChart({ map, pos, detailed }: { map: MapSnapshot; pos: WorldPos | null; detailed: boolean }) {
   return (
-    <div className="relative w-full overflow-hidden rounded-xl bg-[#1a222b]" style={{ aspectRatio: `${map.width} / ${map.height}` }}>
-      <div
-        className="absolute bg-[#173646]"
-        style={{
-          left: `${(map.water.x / map.width) * 100}%`,
-          top: `${(map.water.y / map.height) * 100}%`,
-          width: `${(map.water.w / map.width) * 100}%`,
-          height: `${(map.water.h / map.height) * 100}%`,
-        }}
-      />
+    <div
+      className="relative w-full overflow-hidden rounded-xl bg-[#0c4c78]"
+      style={{
+        aspectRatio: `${map.width} / ${map.height}`,
+        backgroundImage: "url(/map/island.png)",
+        backgroundSize: "cover",
+        backgroundPosition: "center",
+      }}
+    >
       {map.markers.map((marker) => (
         <span
           key={marker.id}

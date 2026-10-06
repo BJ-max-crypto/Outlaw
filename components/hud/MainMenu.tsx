@@ -15,7 +15,7 @@ export default function MainMenu({ ready, clerkEnabled, onPlay, onPlayOnline }: 
           <p className="text-[11px] font-semibold tracking-[0.42em] text-[#e25b2a]">OPEN CITY</p>
           <h1 className="font-display mt-3 text-8xl leading-[0.82] text-[#f4f1ea] sm:text-9xl">Runout</h1>
           <p className="mt-6 max-w-sm text-lg leading-snug text-[#d9d3c7]">
-            Work a shift, rob a register, buy a car or a boat. The city does not reset.
+            Drive or steal a ride, work the port, and invest on the stock floor. The island does not reset.
           </p>
           <button
             type="button"
@@ -39,15 +39,17 @@ export default function MainMenu({ ready, clerkEnabled, onPlay, onPlayOnline }: 
           <dt className="font-medium text-[#f4f1ea]">Shift</dt>
           <dd>Sprint. It burns energy</dd>
           <dt className="font-medium text-[#f4f1ea]">E</dt>
-          <dd>Buy, or clock in</dd>
+          <dd>Drive, clock in, buy, or invest</dd>
           <dt className="font-medium text-[#f4f1ea]">F</dt>
-          <dd>Enter, steal, or exit a vehicle</dd>
+          <dd>Steal a vehicle, or get out</dd>
           <dt className="font-medium text-[#f4f1ea]">Hold R</dt>
           <dd>Rob a business you do not own</dd>
           <dt className="font-medium text-[#f4f1ea]">1 2 3</dt>
-          <dd>Buy food at the mart</dd>
+          <dd>Buy food at the grocery</dd>
           <dt className="font-medium text-[#f4f1ea]">G</dt>
           <dd>Eat. Food restores energy</dd>
+          <dt className="font-medium text-[#f4f1ea]">Pinch</dt>
+          <dd>Two fingers zoom the island. You stay centered</dd>
           <dt className="font-medium text-[#f4f1ea]">Map</dt>
           <dd>Click the corner map to expand it</dd>
         </dl>
