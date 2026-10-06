@@ -17,7 +17,7 @@ Open [http://localhost:3000](http://localhost:3000).
 - **Shift** to sprint. Sprinting spends energy, and low energy slows you down.
 - **E** to drive a vehicle, clock in at the port, buy a business, or open the stock desk.
 - **F** to steal a vehicle without getting in, or to get out. A car stays still until you release the keys and accelerate.
-- Building walls block you. Doors face the road.
+- Every road is open. Only the building walls block you, and each door faces the road.
 - After you clock in, shift pay continues anywhere on the island.
 - A chase lasts 90 seconds. The timer at the top is how long until the cops quit.
 - **Hold R** inside a business you do not own to rob the register.
