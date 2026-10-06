@@ -81,7 +81,7 @@ function paint(
 
 export function createActorTextures(scene: Phaser.Scene): void {
   const styles: ActorStyle[] = [
-    { key: "player", jacket: 0x2c3138, accent: 0xe25b2a, skin: 0xe8c7a4 },
+    { key: "player", jacket: 0xe4ddd2, accent: 0xe25b2a, skin: 0xe8c7a4 },
     { key: "cop", jacket: 0x1d3e73, accent: 0xd7c08a, skin: 0xe8c7a4 },
   ];
   const faces = ["s", "n", "e"] as const;

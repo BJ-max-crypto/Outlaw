@@ -85,7 +85,7 @@ export class HeistScene extends Phaser.Scene {
 
     this.cameras.main.setBounds(0, 0, this.map.world.width, this.map.world.height);
     this.cameras.main.startFollow(this.player, true, 0.16, 0.16);
-    this.cameras.main.setZoom(1.18);
+    this.cameras.main.setZoom(1.32);
     this.game.canvas.tabIndex = 1;
 
     if (this.live) {

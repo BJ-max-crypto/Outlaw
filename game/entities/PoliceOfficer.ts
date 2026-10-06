@@ -22,6 +22,7 @@ export class PoliceOfficer extends Phaser.Physics.Arcade.Sprite {
     this.lastX = crime.x;
     this.lastY = crime.y;
     this.awakeAt = scene.time.now + TUNING.copWakeMs + wakeDelay;
+    this.setScale(1.45);
     this.setDepth(100 + y);
     this.setAlpha(0);
     scene.tweens.add({ targets: this, alpha: 1, duration: 220 });

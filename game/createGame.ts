@@ -2,7 +2,7 @@ import Phaser from "phaser";
 import { HeistScene } from "./scenes/HeistScene";
 
 export function createGame(parent: HTMLElement): Phaser.Game {
-  return new Phaser.Game({
+  const game = new Phaser.Game({
     type: Phaser.AUTO,
     parent,
     backgroundColor: "#0e0f12",
@@ -22,4 +22,10 @@ export function createGame(parent: HTMLElement): Phaser.Game {
     scene: [HeistScene],
     input: { keyboard: true },
   });
+
+  if (process.env.NODE_ENV !== "production") {
+    (window as Window & { __OUTLAW__?: Phaser.Game }).__OUTLAW__ = game;
+  }
+
+  return game;
 }

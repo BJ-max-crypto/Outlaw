@@ -5,6 +5,7 @@ const phaserBuild = path.join(process.cwd(), "node_modules/phaser/dist/phaser.js
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  devIndicators: false,
   webpack: (config) => {
     config.resolve.alias = {
       ...(config.resolve.alias ?? {}),
