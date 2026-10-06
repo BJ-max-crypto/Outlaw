@@ -9,7 +9,7 @@ export default function MainMenu({ ready, onPlay }: MainMenuProps) {
       <div className="flex w-full flex-col justify-between bg-[#0e0f12]/92 p-8 sm:w-[34rem] sm:border-r sm:border-white/10 sm:p-12">
         <div className="rise">
           <p className="text-[11px] font-semibold tracking-[0.42em] text-[#e25b2a]">LOCAL CREW</p>
-          <h1 className="font-display mt-3 text-8xl leading-[0.82] text-[#f4f1ea] sm:text-9xl">OUTLAW</h1>
+          <h1 className="font-display mt-3 text-8xl leading-[0.82] text-[#f4f1ea] sm:text-9xl">Runout</h1>
           <p className="mt-6 max-w-sm text-lg leading-snug text-[#d9d3c7]">
             Rob Quick Stop. Leave before the sirens get comfortable.
           </p>

@@ -14,8 +14,8 @@ const body = Outfit({
 });
 
 export const metadata: Metadata = {
-  title: "OUTLAW",
-  description: "A fast local heist prototype. Rob the store, ditch the cops, reach the van.",
+  title: "Runout",
+  description: "Runout is a fast local heist. Rob the store, ditch the cops, reach the van.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

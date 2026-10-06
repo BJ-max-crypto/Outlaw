@@ -24,7 +24,7 @@ export function createGame(parent: HTMLElement): Phaser.Game {
   });
 
   if (process.env.NODE_ENV !== "production") {
-    (window as Window & { __OUTLAW__?: Phaser.Game }).__OUTLAW__ = game;
+    (window as Window & { __RUNOUT__?: Phaser.Game }).__RUNOUT__ = game;
   }
 
   return game;

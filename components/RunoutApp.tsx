@@ -21,7 +21,7 @@ const initialHud: HudSnapshot = {
   objective: "Get into Quick Stop and hold E at the register.",
 };
 
-export default function OutlawApp() {
+export default function RunoutApp() {
   const [ready, setReady] = useState(false);
   const [screen, setScreen] = useState<Screen>("menu");
   const [hud, setHud] = useState<HudSnapshot>(initialHud);
