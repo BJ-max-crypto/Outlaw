@@ -14,7 +14,7 @@ export function rectContains(rect: Rect, x: number, y: number, pad = 0): boolean
   );
 }
 
-type DoorGap = { side: "south"; x: number; size: number };
+type DoorGap = { side: "south" | "east"; x: number; size: number };
 
 const TH = 36;
 
@@ -28,6 +28,16 @@ function splitHorizontal(wall: Rect, gapX: number, gapW: number): Rect[] {
   return parts;
 }
 
+function splitVertical(wall: Rect, gapY: number, gapH: number): Rect[] {
+  const top = gapY - wall.y;
+  const bottomY = gapY + gapH;
+  const bottom = wall.y + wall.h - bottomY;
+  const parts: Rect[] = [];
+  if (top > 4) parts.push({ x: wall.x, y: wall.y, w: wall.w, h: top });
+  if (bottom > 4) parts.push({ x: wall.x, y: bottomY, w: wall.w, h: bottom });
+  return parts;
+}
+
 /** Hollow perimeter so the player can walk through a door gap. */
 export function perimeter(rect: Rect, gap?: DoorGap): Rect[] {
   const { x, y, w, h } = rect;
@@ -37,6 +47,9 @@ export function perimeter(rect: Rect, gap?: DoorGap): Rect[] {
   const east = { x: x + w - TH, y: y + TH, w: TH, h: h - TH * 2 };
   if (gap?.side === "south") {
     return [north, west, east, ...splitHorizontal(south, gap.x, gap.size)];
+  }
+  if (gap?.side === "east") {
+    return [north, south, west, ...splitVertical(east, gap.x, gap.size)];
   }
   return [north, south, west, east];
 }

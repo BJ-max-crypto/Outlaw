@@ -312,9 +312,7 @@ export function leading(session: SessionState, id: string): boolean {
   if (others.length === 0) return false;
   const mine = session.members.find((member) => member.id === id);
   if (!mine) return false;
-  const ownsAll = others.every((member) => member.heldBy === id);
-  const richest = session.members.every((member) => member.id === id || mine.cash >= member.cash);
-  return ownsAll && richest;
+  return others.every((member) => member.heldBy === id);
 }
 
 export async function claimReward(id: string, rewardId: string): Promise<ShopReward | null> {

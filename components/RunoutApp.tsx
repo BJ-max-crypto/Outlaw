@@ -13,7 +13,7 @@ import ShopButton from "@/components/hud/ShopButton";
 import WatchAdButton from "@/components/hud/WatchAdButton";
 import StockDesk from "@/components/hud/StockDesk";
 import { currentGame } from "@/game/createGame";
-import { getMatch, orderIslands, setMatch, setPendingProfile, type IslandCard } from "@/game/mode/match";
+import { getMatch, orderIslands, saleIslands, setMatch, setPendingProfile, type IslandCard } from "@/game/mode/match";
 import { primeAudio } from "@/game/audio/siren";
 import { TUNING } from "@/game/tuning";
 import type { RewardPayload } from "@/lib/ads/gptRewarded";
@@ -61,7 +61,7 @@ function boot(mode: "single" | "multi", session: SessionView | null, username: s
     playerId: id,
     username,
     code: session?.code ?? "",
-    islands: mode === "multi" ? islands : [],
+    islands: mode === "multi" ? islands : saleIslands(id, username),
   });
   currentGame()?.scene.getScene("city")?.scene.restart();
 }
@@ -104,6 +104,7 @@ export default function RunoutApp() {
   const modeRef = useRef(mode);
   modeRef.current = mode;
   const viewRef = useRef<EconomyView | null>(null);
+  const heldRef = useRef<string[]>([]);
   const usernameRef = useRef(username);
   usernameRef.current = username;
   const tail = useRef(Promise.resolve());
@@ -166,6 +167,18 @@ export default function RunoutApp() {
       gameBus.on("grocery", setGrocery),
       gameBus.on("escape", setEscapeMs),
       gameBus.on("island-offer", setOffer),
+      gameBus.on("held-islands", (ids) => {
+        heldRef.current = ids;
+        const raw = readSave(playerId());
+        if (!raw) return;
+        try {
+          const saved = JSON.parse(raw) as CityProfile;
+          saved.islands = ids;
+          writeSave(JSON.stringify(saved), playerId());
+        } catch {
+          heldRef.current = ids;
+        }
+      }),
       gameBus.on("owned-spot", setSpot),
       gameBus.on("business-buy", (id) => {
         void postRef.current({ action: "buy-business", businessId: id }, false);
@@ -348,6 +361,7 @@ export default function RunoutApp() {
             items: data.view.items.map((item) => item.id),
             stockProfit: data.view.realized,
             objectivesDone: data.view.objectivesDone,
+            islands: heldRef.current,
           }),
           playerId(),
         );
@@ -408,6 +422,7 @@ export default function RunoutApp() {
         profile = null;
       }
     }
+    heldRef.current = profile?.islands ?? [];
     setPendingProfile(profile);
     boot("single", null, username, playerId());
     setPaused(false);
@@ -605,7 +620,14 @@ export default function RunoutApp() {
         <IslandOffer
           username={offer.username}
           worth={offer.worth}
-          onBuy={() => void sessionAction("island", offer.id)}
+          onBuy={() => {
+            if (mode === "single") {
+              gameBus.emit("island-buy", offer.id);
+              setOffer(null);
+              return;
+            }
+            void sessionAction("island", offer.id);
+          }}
           onClose={() => setOffer(null)}
         />
       )}

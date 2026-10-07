@@ -28,6 +28,7 @@ export type CityMap = {
   stockZone: Rect;
   pierZone: Rect;
   dockZones: Rect[];
+  claimZone: Rect;
   rides: PlacedRide[];
   playerSpawn: { x: number; y: number };
   bustSpawn: { x: number; y: number };
@@ -46,17 +47,18 @@ function at(x: number, y: number): { x: number; y: number } {
   return { x: x * MAP_SCALE, y: y * MAP_SCALE };
 }
 
-function shell(x: number, y: number, w: number, h: number, door = 96): Rect[] {
+function shell(x: number, y: number, w: number, h: number, door = 96, side: "south" | "east" = "south"): Rect[] {
   const rect = zone(x, y, w, h);
   const size = door * MAP_SCALE;
+  if (side === "east") return perimeter(rect, { side: "east", x: rect.y + (rect.h - size) / 2, size });
   return perimeter(rect, { side: "south", x: rect.x + (rect.w - size) / 2, size });
 }
 
 const zones = {
-  grocery: zone(292, 220, 160, 140),
-  quickstop: zone(274, 866, 80, 100),
-  club: zone(544, 586, 112, 152),
-  diner: zone(572, 878, 108, 106),
+  grocery: zone(286, 214, 150, 130),
+  quickstop: zone(268, 868, 150, 120),
+  club: zone(540, 590, 120, 130),
+  diner: zone(560, 880, 160, 120),
 };
 
 export function closestSpawns(
@@ -78,43 +80,44 @@ export function buildCityMap(): CityMap {
   return {
     world: WORLD,
     walls: [
-      ...shell(274, 202, 196, 148, 80),
-      ...shell(257, 542, 157, 224, 72),
-      ...shell(254, 844, 118, 142, 56),
-      ...shell(522, 564, 152, 196, 70),
-      ...shell(550, 856, 148, 150, 68),
-      ...shell(807, 650, 140, 188, 64),
+      ...shell(268, 198, 182, 168, 72),
+      ...shell(250, 528, 180, 252, 80),
+      ...shell(255, 848, 175, 164, 64, "east"),
+      ...shell(522, 568, 152, 188, 68),
+      ...shell(548, 858, 190, 164, 70),
+      ...shell(802, 658, 156, 186, 64),
     ],
     water: { x: 0, y: 0, w: 0, h: 0 },
     businesses,
     groceryZone: zones.grocery,
-    jobZone: zone(860, 300, 150, 110),
-    stockZone: zone(828, 672, 100, 144),
-    pierZone: zone(1024, 432, 100, 28),
-    dockZones: [zone(880, 270, 160, 190), zone(980, 418, 170, 52)],
+    jobZone: zone(750, 300, 190, 170),
+    stockZone: zone(824, 690, 100, 130),
+    pierZone: zone(1000, 424, 170, 40),
+    dockZones: [zone(900, 300, 150, 160), zone(1000, 424, 170, 40)],
+    claimZone: zone(400, 340, 200, 150),
     rides: [
-      { id: "white", kind: "car", texture: "car-white", ...at(310, 610), heading: 0, name: "SEDAN", speed: 430, price: 160 },
-      { id: "red", kind: "car", texture: "car-red", ...at(360, 610), heading: 0, name: "STRIPE", speed: 470, price: 220 },
-      { id: "blue", kind: "car", texture: "car-blue", ...at(380, 700), heading: 0, name: "COUPE", speed: 500, price: 280 },
-      { id: "olive", kind: "car", texture: "car-olive", ...at(295, 700), heading: 0, name: "SUV", speed: 400, price: 190 },
-      { id: "yellow", kind: "car", texture: "car-yellow", ...at(345, 700), heading: 0, name: "RACER", speed: 540, price: 340 },
-      { id: "skiff", kind: "boat", texture: "boat-white", ...at(1024, 392), heading: 0, name: "SKIFF", speed: 280, price: 0 },
-      { id: "launch", kind: "boat", texture: "boat-wood", ...at(1184, 448), heading: 0.4, name: "LAUNCH", speed: 300, price: 0 },
-      { id: "rib", kind: "boat", texture: "boat-black", ...at(1076, 304), heading: -0.2, name: "RIB", speed: 320, price: 0 },
+      { id: "white", kind: "car", texture: "car-white", ...at(460, 580), heading: Math.PI / 2, name: "SEDAN", speed: 430, price: 160 },
+      { id: "red", kind: "car", texture: "car-red", ...at(460, 640), heading: Math.PI / 2, name: "STRIPE", speed: 470, price: 220 },
+      { id: "blue", kind: "car", texture: "car-blue", ...at(460, 700), heading: Math.PI / 2, name: "COUPE", speed: 500, price: 280 },
+      { id: "olive", kind: "car", texture: "car-olive", ...at(460, 760), heading: Math.PI / 2, name: "SUV", speed: 400, price: 190 },
+      { id: "yellow", kind: "car", texture: "car-yellow", ...at(460, 820), heading: Math.PI / 2, name: "RACER", speed: 540, price: 340 },
+      { id: "skiff", kind: "boat", texture: "boat-white", ...at(1080, 390), heading: 0, name: "SKIFF", speed: 280, price: 0 },
+      { id: "launch", kind: "boat", texture: "boat-wood", ...at(1160, 370), heading: 0.4, name: "LAUNCH", speed: 300, price: 0 },
+      { id: "rib", kind: "boat", texture: "boat-black", ...at(1120, 340), heading: -0.2, name: "RIB", speed: 320, price: 0 },
     ],
-    playerSpawn: at(500, 440),
-    carCurb: at(336, 805),
-    bustSpawn: at(500, 480),
-    policeSpawns: [at(470, 400), at(470, 520), at(700, 480), at(500, 780), at(780, 500), at(750, 360)],
+    playerSpawn: at(500, 400),
+    carCurb: at(480, 680),
+    bustSpawn: at(490, 450),
+    policeSpawns: [at(500, 400), at(460, 660), at(480, 820), at(760, 360), at(620, 800), at(400, 800)],
     markers: [
-      { id: "grocery", label: "Grocery", x: at(360, 250).x, y: at(360, 250).y, color: "#7dcea0" },
-      { id: "motors", label: "Dealership", x: at(330, 650).x, y: at(330, 650).y, color: "#d7c08a" },
-      { id: "quickstop", label: "Quick Stop", x: at(330, 910).x, y: at(330, 910).y, color: "#e25b2a" },
-      { id: "club", label: "Club", x: at(620, 610).x, y: at(620, 610).y, color: "#c47ca5" },
-      { id: "diner", label: "Diner", x: at(610, 930).x, y: at(610, 930).y, color: "#e7b8a4" },
-      { id: "stock", label: "Stocks", x: at(920, 760).x, y: at(920, 760).y, color: "#8eb4ff" },
-      { id: "port", label: "Port", x: at(900, 280).x, y: at(900, 280).y, color: "#9fd0e4" },
-      { id: "pier", label: "Pier", x: at(1080, 450).x, y: at(1080, 450).y, color: "#6aa8c8" },
+      { id: "grocery", label: "Grocery", x: at(360, 280).x, y: at(360, 280).y, color: "#7dcea0" },
+      { id: "motors", label: "Dealership", x: at(340, 660).x, y: at(340, 660).y, color: "#d7c08a" },
+      { id: "quickstop", label: "Quick Stop", x: at(340, 930).x, y: at(340, 930).y, color: "#e25b2a" },
+      { id: "club", label: "Club", x: at(600, 660).x, y: at(600, 660).y, color: "#c47ca5" },
+      { id: "diner", label: "Diner", x: at(640, 940).x, y: at(640, 940).y, color: "#e7b8a4" },
+      { id: "stock", label: "Stocks", x: at(880, 750).x, y: at(880, 750).y, color: "#8eb4ff" },
+      { id: "port", label: "Port", x: at(860, 380).x, y: at(860, 380).y, color: "#9fd0e4" },
+      { id: "pier", label: "Pier", x: at(1100, 444).x, y: at(1100, 444).y, color: "#6aa8c8" },
     ],
   };
 }

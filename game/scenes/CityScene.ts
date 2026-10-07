@@ -3,6 +3,7 @@ import { gameBus } from "@/lib/game/bus";
 import type { CityProfile, Peer, SessionView } from "@/lib/game/types";
 import { Siren } from "@/game/audio/siren";
 import { Player, type MoveInput } from "@/game/entities/Player";
+import { ShoreGuard } from "@/game/entities/ShoreGuard";
 import { createPlayerTextures } from "@/game/entities/textures";
 import { Vehicle } from "@/game/entities/Vehicle";
 import { buildCityMap, closestSpawns, createWallBodies, paintCity, type PlacedBusiness } from "@/game/map/cityMap";
@@ -23,7 +24,6 @@ const ZOOM_MIN = 0.55;
 const ZOOM_MAX = 2.5;
 const CAR_REACH = 110;
 const BOAT_REACH = 220;
-const DOCK_REACH = 560;
 
 export class CityScene extends Phaser.Scene {
   private state!: CityState;
@@ -81,7 +81,9 @@ export class CityScene extends Phaser.Scene {
   private offHold: (() => void) | null = null;
   private offBust: (() => void) | null = null;
   private offBoat: (() => void) | null = null;
+  private offIslandBuy: (() => void) | null = null;
   private hasBoat = false;
+  private guards: ShoreGuard[] = [];
   private rewardUntil = 0;
   private speedUntil = 0;
   private energyUntil = 0;
@@ -130,6 +132,7 @@ export class CityScene extends Phaser.Scene {
     ];
     for (const file of files) this.load.image(file, `/vehicles/${file}.png`);
     this.load.image("avatar-cop", "/avatars/cop.png");
+    this.load.image("ocean", "/map/ocean.jpg");
   }
 
   create(): void {
@@ -165,6 +168,8 @@ export class CityScene extends Phaser.Scene {
     this.viewZoom = 1.52;
     this.lastPinch = 0;
     this.hasBoat = false;
+    for (const guard of this.guards) guard.destroy();
+    this.guards = [];
     this.rewardUntil = 0;
     this.speedUntil = 0;
     this.energyUntil = 0;
@@ -243,6 +248,7 @@ export class CityScene extends Phaser.Scene {
       this.hasBoat = true;
       this.spawnYacht();
     });
+    this.offIslandBuy = gameBus.on("island-buy", (id) => this.buySaleIsland(id));
 
     this.events.on(Phaser.Scenes.Events.POST_UPDATE, this.onPostUpdate, this);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
@@ -261,6 +267,8 @@ export class CityScene extends Phaser.Scene {
       this.offHold?.();
       this.offBust?.();
       this.offBoat?.();
+      this.offIslandBuy?.();
+      for (const guard of this.guards) guard.destroy();
       if (this.onWheel) this.game.canvas.removeEventListener("wheel", this.onWheel);
       if (this.onKeyDown) window.removeEventListener("keydown", this.onKeyDown);
       this.siren.stop();
@@ -288,8 +296,16 @@ export class CityScene extends Phaser.Scene {
     const pending = takePendingProfile();
     if (pending) this.applyProfile(pending);
     const match = getMatch();
+    if (pending?.vehicles?.includes("yacht")) {
+      this.hasBoat = true;
+      this.spawnYacht();
+    }
+    for (const id of pending?.islands ?? []) {
+      const card = match.islands.find((island) => island.id === id);
+      if (card) card.heldBy = match.playerId;
+    }
+    if (match.islands.length > 0) this.applyHeldIncome(match.islands, match.playerId);
     if (match.mode === "multi") {
-      this.applyHeldIncome(match.islands, match.playerId);
       const mine = match.islands.find((island) => island.id === match.playerId);
       if (mine?.boat) {
         this.hasBoat = true;
@@ -363,6 +379,7 @@ export class CityScene extends Phaser.Scene {
     for (const ride of this.rides) ride.syncLabel();
     const chasing = this.wanted.active;
     this.police.update(delta, this.player, chasing, this.blockers);
+    for (const guard of this.guards) guard.update(delta, this.player, Boolean(this.riding));
     if (chasing) this.siren.update(delta);
     else if (this.siren.running) this.siren.stop();
 
@@ -415,27 +432,19 @@ export class CityScene extends Phaser.Scene {
     this.lastPinch = dist;
   }
 
-  /** Copies of the island sit across the ocean. Index 0 stays on the original map. */
+  /** Every player has their own island. The rest sit across the ocean. */
   private layoutIslands(): void {
     const match = getMatch();
-    const count = match.mode === "multi" ? Math.max(1, match.islands.length) : 1;
+    const count = Math.max(1, match.islands.length);
     const origins = Array.from({ length: count }, (_, index) => islandOrigin(index));
     setIslandOrigins(origins);
-    if (match.mode === "multi" && origins.length > 0) {
-      const home = match.islands[0]?.username || match.username || "ISLAND";
-      this.add
-        .text(ISLAND_SPAN / 2, 90, home, {
-          fontFamily: "Arial Black, Arial, sans-serif",
-          fontSize: "42px",
-          color: "#f4f1ea",
-        })
-        .setOrigin(0.5)
-        .setDepth(6);
-    }
-    for (let index = 1; index < origins.length; index += 1) {
+    const spanX = Math.max(...origins.map((origin) => origin.x)) + ISLAND_SPAN;
+    const spanY = Math.max(...origins.map((origin) => origin.y)) + ISLAND_SPAN;
+    this.paintOcean(spanX, spanY);
+    for (let index = 0; index < origins.length; index += 1) {
       const origin = origins[index];
-      this.add.image(origin.x, origin.y, "island").setOrigin(0, 0).setScale(MAP_SCALE).setDepth(0);
-      const name = match.islands[index]?.username || "ISLAND";
+      if (index > 0) this.add.image(origin.x, origin.y, "island").setOrigin(0, 0).setScale(MAP_SCALE).setDepth(0);
+      const name = match.islands[index]?.username || match.username || "ISLAND";
       this.add
         .text(origin.x + ISLAND_SPAN / 2, origin.y + 90, name, {
           fontFamily: "Arial Black, Arial, sans-serif",
@@ -444,6 +453,7 @@ export class CityScene extends Phaser.Scene {
         })
         .setOrigin(0.5)
         .setDepth(6);
+      if (index === 0) continue;
       for (const wall of this.map.walls) {
         const shifted = { x: wall.x + origin.x, y: wall.y + origin.y, w: wall.w, h: wall.h };
         this.blockers.push(new Phaser.Geom.Rectangle(shifted.x, shifted.y, shifted.w, shifted.h));
@@ -451,14 +461,48 @@ export class CityScene extends Phaser.Scene {
         this.walls.add(body);
       }
     }
-    const width = origins[origins.length - 1].x + ISLAND_SPAN;
-    this.physics.world.setBounds(0, 0, width, ISLAND_SPAN);
+    const pad = 900;
+    this.physics.world.setBounds(-pad, -pad, spanX + pad * 2, spanY + pad * 2);
     this.walls.refresh();
+    this.syncGuards();
   }
 
-  /** The million-dollar yacht is the only ride that may leave home water. */
+  private paintOcean(width: number, height: number): void {
+    const frame = this.textures.get("ocean").getSourceImage() as { width: number; height: number };
+    const tileW = frame.width || 2048;
+    const tileH = frame.height || 2048;
+    const pad = 1600;
+    const image = this.add.image(-pad, -pad, "ocean").setOrigin(0, 0).setDepth(-2);
+    image.setScale((width + pad * 2) / tileW, (height + pad * 2) / tileH);
+  }
+
+  /** Reinforcements stand between the dock and the middle of an island you do not own. */
+  private syncGuards(): void {
+    for (const guard of this.guards) guard.destroy();
+    this.guards = [];
+    const match = getMatch();
+    const posts = [
+      { x: 900, y: 400 },
+      { x: 780, y: 430 },
+      { x: 660, y: 450 },
+      { x: 560, y: 420 },
+      { x: 860, y: 500 },
+      { x: 720, y: 520 },
+    ];
+    match.islands.forEach((card, index) => {
+      if (index === 0 || card.heldBy === match.playerId || card.reinforcements <= 0) return;
+      const origin = islandOrigin(index);
+      const count = Math.min(card.reinforcements, posts.length);
+      for (let n = 0; n < count; n += 1) {
+        const post = posts[n];
+        this.guards.push(new ShoreGuard(this, origin.x + post.x * MAP_SCALE, origin.y + post.y * MAP_SCALE, n * 400));
+      }
+    });
+  }
+
+  /** The yacht is the only ride that may leave home water. */
   private fenceCrossing(): void {
-    if (getMatch().mode !== "multi" || this.hasBoat) return;
+    if (this.hasBoat) return;
     const target = this.riding ?? this.player;
     const inside = target.x >= 0 && target.y >= 0 && target.x <= ISLAND_SPAN && target.y <= ISLAND_SPAN;
     if (inside) {
@@ -471,30 +515,62 @@ export class CityScene extends Phaser.Scene {
     if (target instanceof Vehicle) target.speed = 0;
   }
 
-  private watchIslands(): void {
+  private foreignIsland(): { index: number; card: ReturnType<typeof getMatch>["islands"][number] } | null {
     const match = getMatch();
-    if (match.mode !== "multi" || this.riding) {
-      this.clearIslandOffer();
-      return;
-    }
+    if (this.riding || match.islands.length < 2) return null;
     const index = landIslandIndex(this.player.x, this.player.y);
-    if (index === null || index === 0) {
-      this.clearIslandOffer();
-      return;
-    }
+    if (index === null || index === 0) return null;
     const card = match.islands[index];
-    if (!card || card.heldBy === match.playerId) {
+    if (!card || card.heldBy === match.playerId) return null;
+    return { index, card };
+  }
+
+  private inClaim(index: number): boolean {
+    const origin = islandOrigin(index);
+    const zone = this.map.claimZone;
+    return rectContains(
+      { x: zone.x + origin.x, y: zone.y + origin.y, w: zone.w, h: zone.h },
+      this.player.x,
+      this.player.y,
+    );
+  }
+
+  private watchIslands(): void {
+    const visit = this.foreignIsland();
+    if (!visit || !this.inClaim(visit.index)) {
       this.clearIslandOffer();
       return;
     }
-    if (this.offeredIsland === index) return;
-    this.offeredIsland = index;
-    const income = islandIncome(card);
+    if (this.offeredIsland === visit.index) return;
+    this.offeredIsland = visit.index;
+    const income = islandIncome(visit.card);
+    const cleared = visit.card.reinforcements > 0 ? "You got past the reinforcements. " : "";
     gameBus.emit("island-offer", {
-      id: card.id,
-      username: card.username,
-      worth: income > 0 ? `It brings in ${formatCash(income)} each pay cycle.` : "Nothing on it is earning yet.",
+      id: visit.card.id,
+      username: visit.card.username,
+      worth: `${cleared}${income > 0 ? `It brings in ${formatCash(income)} each pay cycle.` : "Nothing on it is earning yet."}`,
     });
+  }
+
+  private buySaleIsland(id: string): void {
+    const match = getMatch();
+    if (match.mode !== "single") return;
+    const card = match.islands.find((island) => island.id === id);
+    if (!card || card.heldBy === match.playerId) return;
+    if (!this.state.spend(TUNING.islandBuyCost)) {
+      this.popup(this.player.x, this.player.y - 28, "NEED CASH", "#f4f1ea");
+      return;
+    }
+    card.heldBy = match.playerId;
+    this.applyHeldIncome(match.islands, match.playerId);
+    this.syncGuards();
+    this.clearIslandOffer();
+    this.flash(`${card.username} IS YOURS`);
+    const held = match.islands.filter((island) => island.id !== match.playerId && island.heldBy === match.playerId).map((island) => island.id);
+    gameBus.emit("held-islands", held);
+    const others = match.islands.filter((island) => island.id !== match.playerId);
+    if (others.length > 0 && others.every((island) => island.heldBy === match.playerId)) this.flash("ALL ISLANDS");
+    this.pushHud();
   }
 
   private clearIslandOffer(): void {
@@ -519,6 +595,7 @@ export class CityScene extends Phaser.Scene {
     const islands = orderIslands(session.members, match.playerId);
     setMatch({ ...match, code: session.code, islands, mode: "multi" });
     this.applyHeldIncome(islands, match.playerId);
+    this.syncGuards();
     const mine = islands.find((island) => island.id === match.playerId);
     if (mine?.boat) {
       this.hasBoat = true;
@@ -561,7 +638,7 @@ export class CityScene extends Phaser.Scene {
 
   private spawnYacht(): void {
     if (this.rides.some((ride) => ride.id === "yacht")) return;
-    const spot = { x: 1032 * MAP_SCALE, y: 352 * MAP_SCALE };
+    const spot = { x: 1140 * MAP_SCALE, y: 390 * MAP_SCALE };
     const ride = new Vehicle(this, {
       id: "yacht",
       kind: "boat",
@@ -769,6 +846,10 @@ export class CityScene extends Phaser.Scene {
       this.flash("SHIFT STARTED");
       return;
     }
+    if (this.atPier() && !this.hasBoat) {
+      this.buyYacht();
+      return;
+    }
     const spot = this.businessAt();
     if (!spot || this.state.owns(spot.id)) return;
     this.requestBusiness(spot.id);
@@ -800,6 +881,23 @@ export class CityScene extends Phaser.Scene {
     this.pullOutside(ride);
     this.mount(ride);
     this.popup(ride.x, ride.y - 36, ride.name, "#d7c08a");
+  }
+
+  private atPier(): boolean {
+    return this.map.dockZones.some((dock) => rectContains(dock, this.player.x, this.player.y));
+  }
+
+  private buyYacht(): void {
+    if (this.hasBoat) return;
+    if (!this.state.spend(TUNING.crossingBoatCost)) {
+      this.popup(this.player.x, this.player.y - 28, "NEED CASH", "#f4f1ea");
+      return;
+    }
+    this.hasBoat = true;
+    this.state.ownedVehicles.add("yacht");
+    this.spawnYacht();
+    this.flash("YACHT");
+    this.pushHud();
   }
 
   /** Drop a car on the road just outside the dealership, facing along the street. */
@@ -1240,17 +1338,6 @@ export class CityScene extends Phaser.Scene {
         bestD = distance;
       }
     }
-    if (best) return best;
-    const onDock = this.map.dockZones.some((dock) => rectContains(dock, this.player.x, this.player.y));
-    if (!onDock) return null;
-    for (const ride of this.rides) {
-      if (ride.kind !== "boat" || ride.occupied) continue;
-      const distance = Phaser.Math.Distance.Between(this.player.x, this.player.y, ride.x, ride.y);
-      if (distance < DOCK_REACH && distance < bestD) {
-        best = ride;
-        bestD = distance;
-      }
-    }
     return best;
   }
 
@@ -1319,7 +1406,12 @@ export class CityScene extends Phaser.Scene {
       if (ride.kind === "car" && ride.price > 0) return `E BUY $${ride.price} · F STEAL ${ride.name}`;
       return `E DRIVE · F STEAL ${ride.name}`;
     }
+    const visit = this.foreignIsland();
+    if (visit && !this.inClaim(visit.index)) {
+      return visit.card.reinforcements > 0 ? "GET PAST THE REINFORCEMENTS" : "WALK INLAND TO BUY THIS ISLAND";
+    }
     const lines: string[] = [];
+    if (this.atPier() && !this.hasBoat) lines.push(`E BUY YACHT ${formatCash(TUNING.crossingBoatCost)}`);
     if (this.inStock()) lines.push(this.stockOpen ? "E CLOSE" : "E INVEST");
     if (this.inJob()) lines.push(this.state.employed ? "ON THE CLOCK" : "E CLOCK IN");
     const spot = this.businessAt();
@@ -1338,6 +1430,13 @@ export class CityScene extends Phaser.Scene {
 
   private hint(): string {
     if (this.state.wanted > 0) return "The clock keeps running if you rob again. Last a minute and a half and the cops break off. A bust takes half your cash, or a quarter if you watch an ad.";
+    const match = getMatch();
+    if (match.mode === "single" && match.islands.length > 1) {
+      const owned = match.islands.filter((island) => island.heldBy === match.playerId).length;
+      if (owned < match.islands.length) return `Buy islands across the ocean. You hold ${owned} of ${match.islands.length}. A yacht crosses the water.`;
+      return "Every island pays you.";
+    }
+    if (match.mode === "multi") return "Get past each island's reinforcements, then buy them all.";
     if (this.inJob() && this.state.employed) return "Shift pay is on while you stay at the port.";
     if (this.state.employed) return "Walk back into the port to pick the wage up again.";
     return "Drive or steal a ride, clock in at the port, or invest on the stock floor.";

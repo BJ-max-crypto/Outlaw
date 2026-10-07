@@ -41,6 +41,7 @@ export type CityProfile = {
   employed: boolean;
   businesses: string[];
   vehicles: string[];
+  islands?: string[];
   levels?: Record<string, number>;
   shares?: Record<string, number>;
   basis?: Record<string, number>;
@@ -133,6 +134,8 @@ export type GameEventMap = {
   session: SessionView;
   "spawn-boat": undefined;
   "island-offer": { id: string; username: string; worth: string } | null;
+  "island-buy": string;
+  "held-islands": string[];
   ledger: import("@/lib/economy/model").EconomyView;
   "ledger-deny": string;
   "business-buy": string;

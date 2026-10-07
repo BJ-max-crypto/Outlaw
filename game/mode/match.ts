@@ -3,7 +3,9 @@ import { TUNING } from "@/game/tuning";
 import type { CityProfile } from "@/lib/game/types";
 
 export const ISLAND_SPAN = 1254 * 2;
-export const ISLAND_GAP = 1600;
+export const ISLAND_GAP = 980;
+
+const SALE_NAMES = ["EAST", "SOUTH", "OUTER"];
 
 export type IslandCard = {
   id: string;
@@ -45,8 +47,36 @@ export function getMatch(): MatchConfig {
   return current;
 }
 
+/** Islands sit on a grid in the ocean. Index 0 is the local player's home. */
 export function islandOrigin(index: number): { x: number; y: number } {
-  return { x: index * (ISLAND_SPAN + ISLAND_GAP), y: 0 };
+  const col = index % 2;
+  const row = Math.floor(index / 2);
+  return { x: col * (ISLAND_SPAN + ISLAND_GAP), y: row * (ISLAND_SPAN + ISLAND_GAP) };
+}
+
+/** Singleplayer starts on one island. The other three are for sale across the water. */
+export function saleIslands(playerId: string, username: string): IslandCard[] {
+  const home: IslandCard = {
+    id: playerId,
+    username: username || "HOME",
+    businesses: [],
+    reinforcements: 0,
+    heldBy: playerId,
+    cash: 0,
+    boat: false,
+    employed: false,
+  };
+  const extras = SALE_NAMES.map((name, index) => ({
+    id: `sale-${index + 1}`,
+    username: name,
+    businesses: ["grocery", "diner", "club", "quickstop"],
+    reinforcements: 0,
+    heldBy: "",
+    cash: 0,
+    boat: false,
+    employed: true,
+  }));
+  return [home, ...extras];
 }
 
 export function islandIncome(card: IslandCard): number {

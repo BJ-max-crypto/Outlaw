@@ -180,7 +180,7 @@ function DashboardBody({
 
           {notice && <p className="mt-4 text-sm text-[#e7b8a4]">{notice}</p>}
         </div>
-        <p className="mt-10 max-w-sm text-sm text-[#a39e94]">Esc returns here. Singleplayer pauses. A yacht is only for crossing to other islands.</p>
+        <p className="mt-10 max-w-sm text-sm text-[#a39e94]">Singleplayer: buy islands across the ocean and collect their pay. Multiplayer is a private server. Get past each friend's reinforcements and buy every island to win.</p>
       </div>
     </div>
   );
