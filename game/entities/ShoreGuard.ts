@@ -1,6 +1,6 @@
 import Phaser from "phaser";
 import { TUNING } from "@/game/tuning";
-import { AVATAR_COP, faceAngle, placeAvatar } from "./textures";
+import { copTexture } from "./textures";
 import type { Player } from "./Player";
 
 /** A reinforcement posted between the dock and the middle of someone else's island. */
@@ -14,8 +14,9 @@ export class ShoreGuard {
     this.phase = phase;
     this.baseX = x;
     this.baseY = y;
-    this.sprite = scene.add.sprite(x, y, AVATAR_COP);
-    placeAvatar(this.sprite);
+    this.sprite = scene.add.sprite(x, y, copTexture("w", 0));
+    this.sprite.setScale(1.45);
+    this.sprite.setFlipX(true);
     this.sprite.setDepth(100 + y);
   }
 
@@ -23,8 +24,11 @@ export class ShoreGuard {
     this.phase += delta;
     const x = this.baseX;
     const y = this.baseY + Math.sin(this.phase / 700) * 18;
+    const frame = Math.floor(this.phase / 160) % 2 === 0 ? 0 : 1;
     this.sprite.setPosition(x, y);
-    this.sprite.setRotation(faceAngle("w") + Math.sin(this.phase / 500) * 0.2);
+    this.sprite.setTexture(copTexture("w", frame));
+    this.sprite.setFlipX(true);
+    this.sprite.setRotation(0);
     this.sprite.setDepth(100 + y);
     if (riding) return;
     const distance = Phaser.Math.Distance.Between(x, y, player.x, player.y);
