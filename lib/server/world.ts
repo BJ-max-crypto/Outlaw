@@ -346,6 +346,26 @@ export async function claimReward(id: string, rewardId: string): Promise<ShopRew
   return reward;
 }
 
+/** Lets a GPT rewarded-ad payout survive the next cash sync. */
+export async function creditWatchedReward(id: string, amount: number): Promise<number | null> {
+  const cash = Math.floor(amount);
+  if (!Number.isFinite(cash) || cash <= 0 || cash > 100_000) return null;
+  let account = getAccount(id) ?? (await loadAccount(id));
+  if (!account) {
+    account = saveAccount({
+      id,
+      username: "",
+      cash: TUNING.startingCash,
+      energy: 100,
+      employed: false,
+      businesses: [],
+      vehicles: [],
+    });
+  }
+  account.stakeCredit = (account.stakeCredit ?? 0) + cash;
+  return cash;
+}
+
 /** Extra cash per minute from islands and reinforcements this player holds in a live session. */
 export function heldPayPerMinute(playerId: string): number {
   for (const session of sessions.values()) {

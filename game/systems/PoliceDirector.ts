@@ -40,6 +40,11 @@ export class PoliceDirector {
     });
   }
 
+  /** Point the officers at a new crime without moving them or restarting the chase. */
+  press(crime: { x: number; y: number }): void {
+    for (const cop of this.officers) cop.press(crime);
+  }
+
   update(
     delta: number,
     player: Player,

@@ -10,11 +10,13 @@ import Hud from "@/components/hud/Hud";
 import IslandActions from "@/components/hud/IslandActions";
 import IslandOffer from "@/components/hud/IslandOffer";
 import ShopButton from "@/components/hud/ShopButton";
+import WatchAdButton from "@/components/hud/WatchAdButton";
 import StockDesk from "@/components/hud/StockDesk";
 import { currentGame } from "@/game/createGame";
 import { getMatch, orderIslands, setMatch, setPendingProfile, type IslandCard } from "@/game/mode/match";
 import { primeAudio } from "@/game/audio/siren";
 import { TUNING } from "@/game/tuning";
+import type { RewardPayload } from "@/lib/ads/gptRewarded";
 import { watchAds } from "@/lib/ads/rewarded";
 import { gameBus } from "@/lib/game/bus";
 import type { EconomyView } from "@/lib/economy/model";
@@ -590,6 +592,7 @@ export default function RunoutApp() {
           onReward={async (reward, report) => grantAfterAd(reward, playerId(), report)}
         />
       )}
+      {screen === "play" && <WatchAdButton onReward={(reward) => grantWatchedMoney(reward, playerId())} />}
       {screen === "play" && mode === "multi" && session && (
         <IslandActions
           session={session}
@@ -656,6 +659,25 @@ async function grantAfterAd(
   });
   if (result !== "viewed") return false;
   return grantReward(reward.id, id);
+}
+
+function grantWatchedMoney(reward: RewardPayload, id: string): void {
+  const amount = Math.floor(reward.amount);
+  if (!Number.isFinite(amount) || amount <= 0) return;
+  const type = reward.type || "CASH";
+  void fetch("/api/rewarded", {
+    method: "POST",
+    headers: playerHeaders(id),
+    body: JSON.stringify({ amount, type }),
+  })
+    .then((response) => response.json())
+    .then((data: { ok?: boolean; cash?: number }) => {
+      const cash = data.ok && Number.isFinite(data.cash) ? Math.floor(data.cash as number) : amount;
+      gameBus.emit("reward", { id: "gpt-reward", name: type, ms: 0, cash, earnings: 1, speed: 1, energy: 1, gas: 1 });
+    })
+    .catch(() => {
+      gameBus.emit("reward", { id: "gpt-reward", name: type, ms: 0, cash: amount, earnings: 1, speed: 1, energy: 1, gas: 1 });
+    });
 }
 
 async function grantReward(rewardId: string, id: string): Promise<boolean> {
