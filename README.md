@@ -41,7 +41,7 @@ Multiplayer opens an invite code. Friends join with that code, and the host pres
 
 ## Shop
 
-A STORE button sits in the bottom-left corner during play. It opens the add-ons: 2× speed, 2× earnings, half energy drain, and half gas burn, each for 30 seconds after one rewarded ad. $1,000 costs two finished ads. The AdSense loader stays in the document head (`ca-pub-8078670301082619`). The reward is granted only after the ad is viewed, through `POST /api/shop`.
+A STORE button sits in the bottom-left corner during play. It opens the add-ons: 2× speed, 2× earnings, half energy drain, and half gas burn, each for 30 seconds after one rewarded ad. $1,000 costs two finished ads. Those buttons call AdSense's rewarded placement (`adBreak({ type: "reward" })` with publisher `ca-pub-8078670301082619`). The store and bust panels step aside while the ad is up, and sound stays on so a video can play. The reward is granted only after AdSense says the ad was viewed, through `POST /api/shop`. Localhost uses AdSense test mode, which shows Google's rewarded sample instead of a video file. On an approved live site, the same call plays the rewarded video or display ad AdSense fills. There is no setting that forces a video.
 
 Getting caught opens a choice. Take the hit and lose half your cash, `Math.floor(cash * 0.5)` kept. Watch an ad and lose a quarter instead, `Math.floor(cash * 0.25)`. Closing the ad or finding none still takes half.
 

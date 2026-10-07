@@ -1,8 +1,20 @@
-type BreakStatus = "viewed" | "dismissed" | "notReady" | "timeout" | "invalid" | "error" | "noAdPreloaded" | "frequencyCapped" | "ignored" | "other";
+type BreakStatus =
+  | "viewed"
+  | "dismissed"
+  | "notReady"
+  | "timeout"
+  | "invalid"
+  | "error"
+  | "noAdPreloaded"
+  | "frequencyCapped"
+  | "ignored"
+  | "other"
+  | "";
 
 type AdBreakOptions = {
   type: "reward";
   name: string;
+  beforeAd?: () => void;
   beforeReward?: (showAdFn: () => void) => void;
   adViewed?: () => void;
   adDismissed?: () => void;
@@ -21,9 +33,18 @@ declare global {
 
 export type AdResult = "viewed" | "skipped" | "unavailable";
 
-const AD_WAIT_MS = 45_000;
+const AD_WAIT_MS = 120_000;
+const RETRYABLE = new Set(["noAdPreloaded", "notReady", "timeout", "other"]);
 
-/** Plays `count` rewarded ads in a row. The reward is only earned when every ad is viewed. */
+function revealGame(): void {
+  document.documentElement.classList.remove("ad-showing");
+}
+
+function coverForAd(): void {
+  document.documentElement.classList.add("ad-showing");
+}
+
+/** Plays `count` AdSense rewarded placements. A video counts only after it is viewed. */
 export function watchAds(
   count: number,
   hooks?: { onStart?: () => void; onEnd?: () => void; onProgress?: (index: number, total: number) => void },
@@ -31,14 +52,16 @@ export function watchAds(
   const total = Math.max(1, Math.floor(count));
   return new Promise((resolve) => {
     let settledAll = false;
-    let started = false;
+    let paused = false;
     const finish = (result: AdResult) => {
       if (settledAll) return;
       settledAll = true;
-      if (started) hooks?.onEnd?.();
+      revealGame();
+      if (paused) hooks?.onEnd?.();
       resolve(result);
     };
-    const play = (index: number) => {
+    const play = (index: number, attempt: number) => {
+      if (settledAll) return;
       if (index > total) {
         finish("viewed");
         return;
@@ -48,40 +71,66 @@ export function watchAds(
         finish("unavailable");
         return;
       }
-      if (!started) {
-        started = true;
-        hooks?.onStart?.();
-      }
       hooks?.onProgress?.(index, total);
-      let settled = false;
-      const settle = (result: AdResult) => {
-        if (settled || settledAll) return;
-        settled = true;
-        window.clearTimeout(timer);
-        if (result === "viewed" && index < total) {
-          play(index + 1);
+      let viewed = false;
+      let dismissed = false;
+      let closed = false;
+      const timer = window.setTimeout(() => {
+        if (!closed) finish("unavailable");
+      }, AD_WAIT_MS);
+      const settleBreak = (status: BreakStatus) => {
+        if (closed || settledAll) return;
+        if (viewed || status === "viewed") {
+          closed = true;
+          window.clearTimeout(timer);
+          if (index < total) play(index + 1, 0);
+          else finish("viewed");
           return;
         }
-        finish(result);
+        if (dismissed || status === "dismissed") {
+          closed = true;
+          window.clearTimeout(timer);
+          finish("skipped");
+          return;
+        }
+        if (attempt < 2 && RETRYABLE.has(status)) {
+          closed = true;
+          window.clearTimeout(timer);
+          window.setTimeout(() => play(index, attempt + 1), 1500);
+          return;
+        }
+        closed = true;
+        window.clearTimeout(timer);
+        finish("unavailable");
       };
-      const timer = window.setTimeout(() => settle("unavailable"), AD_WAIT_MS);
       try {
         adBreak({
           type: "reward",
           name: `runout-${index}`,
-          beforeReward: (showAdFn) => showAdFn(),
-          adViewed: () => settle("viewed"),
-          adDismissed: () => settle("skipped"),
-          adBreakDone: (info) => {
-            if (info.breakStatus === "viewed") settle("viewed");
-            else if (info.breakStatus === "dismissed") settle("skipped");
-            else settle("unavailable");
+          beforeReward: (showAdFn) => {
+            coverForAd();
+            showAdFn();
           },
+          beforeAd: () => {
+            coverForAd();
+            if (!paused) {
+              paused = true;
+              hooks?.onStart?.();
+            }
+          },
+          adViewed: () => {
+            viewed = true;
+          },
+          adDismissed: () => {
+            dismissed = true;
+          },
+          adBreakDone: (info) => settleBreak(info?.breakStatus ?? ""),
         });
       } catch {
-        settle("unavailable");
+        window.clearTimeout(timer);
+        finish("unavailable");
       }
     };
-    play(1);
+    play(1, 0);
   });
 }

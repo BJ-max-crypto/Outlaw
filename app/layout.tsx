@@ -24,15 +24,17 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en">
       <head>
         <script
-          dangerouslySetInnerHTML={{
-            __html: `window.adsbygoogle=window.adsbygoogle||[];var adBreak=window.adBreak=window.adConfig=function(o){window.adsbygoogle.push(o)};adConfig({preloadAdBreaks:"on",sound:"off"});`,
-          }}
-        />
-        <script
           async
           src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-8078670301082619"
           crossOrigin="anonymous"
+          data-ad-client="ca-pub-8078670301082619"
+          data-ad-frequency-hint="30s"
           {...(process.env.NODE_ENV === "production" ? {} : { "data-adbreak-test": "on" })}
+        />
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `window.adsbygoogle=window.adsbygoogle||[];var adBreak=window.adBreak=window.adConfig=function(o){window.adsbygoogle.push(o)};adConfig({preloadAdBreaks:"on",sound:"on"});`,
+          }}
         />
       </head>
       <body className={`${display.variable} ${body.variable} antialiased`}>

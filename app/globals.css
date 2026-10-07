@@ -64,3 +64,8 @@ button {
 .heat-vignette {
   animation: heat 0.7s ease-in-out infinite;
 }
+
+html.ad-showing .runout-chrome {
+  visibility: hidden !important;
+  pointer-events: none !important;
+}

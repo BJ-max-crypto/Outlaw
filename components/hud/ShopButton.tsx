@@ -70,7 +70,7 @@ export default function ShopButton({ onReward }: ShopButtonProps) {
         </button>
       </div>
       {open && (
-        <div className="absolute inset-0 z-40 flex items-center justify-center bg-[#0e0f12]/75 p-6">
+        <div className="runout-chrome absolute inset-0 z-40 flex items-center justify-center bg-[#0e0f12]/75 p-6">
           <div className="w-full max-w-md rounded-3xl border border-white/10 bg-[#17191e] p-6 shadow-2xl">
             <div className="flex items-start justify-between gap-4">
               <div>

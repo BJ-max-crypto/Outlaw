@@ -14,7 +14,7 @@ type BustOfferProps = {
 
 export default function BustOffer({ cash, loseHalf, loseQuarter, busy, note, onWatch, onTake }: BustOfferProps) {
   return (
-    <div className="absolute inset-0 z-50 flex items-center justify-center bg-[#0e0f12]/80 p-6">
+    <div className="runout-chrome absolute inset-0 z-50 flex items-center justify-center bg-[#0e0f12]/80 p-6">
       <div className="w-full max-w-md rounded-3xl border border-white/10 bg-[#17191e] p-6 shadow-2xl">
         <p className="text-[11px] font-semibold tracking-[0.42em] text-[#e25b2a]">BUSTED</p>
         <h2 className="font-display mt-2 text-6xl leading-none text-[#f4f1ea]">Caught</h2>
