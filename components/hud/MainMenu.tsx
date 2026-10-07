@@ -44,8 +44,8 @@ export default function MainMenu({ ready, clerkEnabled, onPlay, onPlayOnline }: 
           <dd>Steal a vehicle, or get out</dd>
           <dt className="font-medium text-[#f4f1ea]">Hold R</dt>
           <dd>Rob a business you do not own</dd>
-          <dt className="font-medium text-[#f4f1ea]">1 2 3</dt>
-          <dd>Buy food at the grocery</dd>
+          <dt className="font-medium text-[#f4f1ea]">Grocery</dt>
+          <dd>Walk in and buy food from the counter</dd>
           <dt className="font-medium text-[#f4f1ea]">G</dt>
           <dd>Eat. Food restores energy</dd>
           <dt className="font-medium text-[#f4f1ea]">Pinch</dt>

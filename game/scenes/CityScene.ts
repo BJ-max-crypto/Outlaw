@@ -13,7 +13,7 @@ import { PoliceDirector } from "@/game/systems/PoliceDirector";
 import { RobberySystem } from "@/game/systems/RobberySystem";
 import { WantedSystem } from "@/game/systems/WantedSystem";
 import { TUNING } from "@/game/tuning";
-import { FOODS, seedQuotes, type FoodItem, type MarketQuote } from "@/game/world/catalog";
+import { businessById, FOODS, seedQuotes, type FoodItem, type MarketQuote } from "@/game/world/catalog";
 
 const ZOOM_MIN = 0.55;
 const ZOOM_MAX = 2.5;
@@ -53,6 +53,8 @@ export class CityScene extends Phaser.Scene {
   private feet = new WeakMap<object, { x: number; y: number }>();
   private quotes: MarketQuote[] = seedQuotes();
   private stockOpen = false;
+  private groceryOpen = false;
+  private groceryDismissed = false;
   private viewZoom = 1.52;
   private lastPinch = 0;
   private offStart: (() => void) | null = null;
@@ -60,6 +62,9 @@ export class CityScene extends Phaser.Scene {
   private offPeers: (() => void) | null = null;
   private offOrder: (() => void) | null = null;
   private offStocksClose: (() => void) | null = null;
+  private offGroceryBuy: (() => void) | null = null;
+  private offGroceryStore: (() => void) | null = null;
+  private offGroceryClose: (() => void) | null = null;
   private onWheel?: (event: WheelEvent) => void;
   private keys!: {
     up: Phaser.Input.Keyboard.Key;
@@ -121,6 +126,8 @@ export class CityScene extends Phaser.Scene {
     this.feet = new WeakMap();
     this.quotes = seedQuotes();
     this.stockOpen = false;
+    this.groceryOpen = false;
+    this.groceryDismissed = false;
     this.viewZoom = 1.52;
     this.lastPinch = 0;
     this.siren = new Siren();
@@ -172,6 +179,12 @@ export class CityScene extends Phaser.Scene {
     this.offPeers = gameBus.on("peers", (list) => this.syncPeers(list));
     this.offOrder = gameBus.on("stock-order", (order) => this.trade(order));
     this.offStocksClose = gameBus.on("stocks-close", () => this.closeStocks());
+    this.offGroceryBuy = gameBus.on("grocery-buy", (index) => this.buyFood(index));
+    this.offGroceryStore = gameBus.on("grocery-store", () => this.buyStore());
+    this.offGroceryClose = gameBus.on("grocery-close", () => {
+      this.groceryDismissed = true;
+      this.closeGrocery();
+    });
 
     this.events.on(Phaser.Scenes.Events.POST_UPDATE, this.onPostUpdate, this);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
@@ -181,9 +194,13 @@ export class CityScene extends Phaser.Scene {
       this.offPeers?.();
       this.offOrder?.();
       this.offStocksClose?.();
+      this.offGroceryBuy?.();
+      this.offGroceryStore?.();
+      this.offGroceryClose?.();
       if (this.onWheel) this.game.canvas.removeEventListener("wheel", this.onWheel);
       this.siren.stop();
       this.closeStocks();
+      this.closeGrocery();
       for (const peer of this.peers.values()) {
         peer.sprite.destroy();
         peer.label.destroy();
@@ -200,6 +217,7 @@ export class CityScene extends Phaser.Scene {
     gameBus.emit("prompt", null);
     gameBus.emit("banner", null);
     gameBus.emit("stocks", null);
+    gameBus.emit("grocery", null);
     gameBus.emit("escape", null);
     this.contain();
     this.pushHud();
@@ -241,6 +259,7 @@ export class CityScene extends Phaser.Scene {
     if (this.escapeMs <= 0) this.decayWanted(delta);
     this.tickEscape(delta);
     this.handleActions();
+    this.syncGrocery();
     this.runRobbery(delta);
 
     for (const ride of this.rides) ride.syncLabel();
@@ -449,6 +468,16 @@ export class CityScene extends Phaser.Scene {
       else this.openStocks();
       return;
     }
+    if (this.inGrocery()) {
+      if (this.groceryOpen) {
+        this.groceryDismissed = true;
+        this.closeGrocery();
+      } else {
+        this.groceryDismissed = false;
+        this.openGrocery();
+      }
+      return;
+    }
     if (this.inJob() && !this.state.employed) {
       this.state.employed = true;
       this.popup(this.player.x, this.player.y - 28, "HIRED", "#d7c08a");
@@ -585,19 +614,79 @@ export class CityScene extends Phaser.Scene {
 
   private buyFood(index: number): void {
     const food = FOODS[index];
-    if (!food || this.riding) return;
-    if (!rectContains(this.map.groceryZone, this.player.x, this.player.y)) return;
+    if (!food || this.riding || !this.inGrocery()) return;
     if (this.state.food.length >= TUNING.packSize) {
       this.popup(this.player.x, this.player.y - 28, "PACK FULL", "#f4f1ea");
+      if (this.groceryOpen) this.emitGrocery();
       return;
     }
     const price = this.foodPrice(food);
     if (!this.state.spend(price)) {
       this.popup(this.player.x, this.player.y - 28, "NEED CASH", "#f4f1ea");
+      if (this.groceryOpen) this.emitGrocery();
       return;
     }
     this.state.food.push(food);
     this.popup(this.player.x, this.player.y - 28, food.name, "#7dcea0");
+    if (this.groceryOpen) this.emitGrocery();
+  }
+
+  private buyStore(): void {
+    if (!this.inGrocery() || this.state.owns("grocery")) return;
+    const price = businessById("grocery")?.price ?? 0;
+    if (!this.state.spend(price)) {
+      this.popup(this.player.x, this.player.y - 28, "NEED CASH", "#f4f1ea");
+      if (this.groceryOpen) this.emitGrocery();
+      return;
+    }
+    this.state.ownedBusinesses.add("grocery");
+    this.popup(this.player.x, this.player.y - 28, "GROCERY", "#d7c08a");
+    if (this.groceryOpen) this.emitGrocery();
+  }
+
+  private syncGrocery(): void {
+    if (this.riding || !this.inGrocery()) {
+      this.groceryDismissed = false;
+      if (this.groceryOpen) this.closeGrocery();
+      return;
+    }
+    if (!this.groceryOpen && !this.groceryDismissed) this.openGrocery();
+  }
+
+  private openGrocery(): void {
+    this.groceryOpen = true;
+    this.emitGrocery();
+  }
+
+  private closeGrocery(): void {
+    if (!this.groceryOpen) {
+      gameBus.emit("grocery", null);
+      return;
+    }
+    this.groceryOpen = false;
+    gameBus.emit("grocery", null);
+  }
+
+  private emitGrocery(): void {
+    const store = businessById("grocery");
+    gameBus.emit("grocery", {
+      cash: this.state.cash,
+      food: this.state.food.length,
+      packSize: TUNING.packSize,
+      ownsStore: this.state.owns("grocery"),
+      storePrice: store?.price ?? 0,
+      items: FOODS.map((food) => ({
+        id: food.id,
+        name: food.name,
+        price: this.foodPrice(food),
+        energy: food.energy,
+        health: food.health,
+      })),
+    });
+  }
+
+  private inGrocery(): boolean {
+    return !this.riding && rectContains(this.map.groceryZone, this.player.x, this.player.y);
   }
 
   private eatFood(): void {
@@ -874,14 +963,13 @@ export class CityScene extends Phaser.Scene {
     if (this.inStock()) lines.push(this.stockOpen ? "E CLOSE" : "E INVEST");
     if (this.inJob()) lines.push(this.state.employed ? "ON THE CLOCK" : "E CLOCK IN");
     const spot = this.businessAt();
-    if (spot && !this.state.owns(spot.id)) {
+    if (this.inGrocery()) {
+      lines.push(this.groceryOpen ? "E CLOSE" : "E SHOP");
+      if (spot && !this.state.owns(spot.id) && this.canRob(spot.id)) lines.push("HOLD R TO ROB");
+    } else if (spot && !this.state.owns(spot.id)) {
       lines.push(this.canRob(spot.id) ? `E BUY $${spot.price} · HOLD R TO ROB` : "COME BACK LATER");
     } else if (spot) {
       lines.push("YOU OWN THIS");
-    }
-    if (rectContains(this.map.groceryZone, this.player.x, this.player.y)) {
-      const menu = FOODS.map((food, index) => `${index + 1} ${food.name} $${this.foodPrice(food)}`).join(" · ");
-      lines.push(menu);
     }
     if (this.state.food.length > 0) lines.push("G EAT");
     return lines.length > 0 ? lines.join(" · ") : null;

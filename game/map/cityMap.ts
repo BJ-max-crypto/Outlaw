@@ -53,7 +53,7 @@ function shell(x: number, y: number, w: number, h: number, door = 96): Rect[] {
 }
 
 const zones = {
-  grocery: zone(294, 224, 156, 104),
+  grocery: zone(292, 220, 160, 140),
   quickstop: zone(274, 866, 80, 100),
   club: zone(544, 586, 112, 152),
   diner: zone(572, 878, 108, 106),

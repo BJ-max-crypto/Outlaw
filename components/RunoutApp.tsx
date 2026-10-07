@@ -3,13 +3,14 @@
 import { useEffect, useState } from "react";
 import CityLink from "@/components/auth/CityLink";
 import GameCanvas from "@/components/game/GameCanvas";
+import GroceryCounter from "@/components/hud/GroceryCounter";
 import Hud from "@/components/hud/Hud";
 import MainMenu from "@/components/hud/MainMenu";
 import StockDesk from "@/components/hud/StockDesk";
 import { primeAudio } from "@/game/audio/siren";
 import { TUNING } from "@/game/tuning";
 import { gameBus } from "@/lib/game/bus";
-import type { CityProfile, HudSnapshot, MapSnapshot, StockBook, WorldPos } from "@/lib/game/types";
+import type { CityProfile, GroceryShelf, HudSnapshot, MapSnapshot, StockBook, WorldPos } from "@/lib/game/types";
 
 type Screen = "menu" | "play";
 
@@ -60,6 +61,7 @@ export default function RunoutApp() {
   const [pos, setPos] = useState<WorldPos | null>(null);
   const [mapOpen, setMapOpen] = useState(false);
   const [stocks, setStocks] = useState<StockBook | null>(null);
+  const [grocery, setGrocery] = useState<GroceryShelf | null>(null);
   const [escapeMs, setEscapeMs] = useState<number | null>(null);
 
   useEffect(() => {
@@ -72,6 +74,7 @@ export default function RunoutApp() {
       gameBus.on("pos", setPos),
       gameBus.on("map-toggle", () => setMapOpen((open) => !open)),
       gameBus.on("stocks", setStocks),
+      gameBus.on("grocery", setGrocery),
       gameBus.on("escape", setEscapeMs),
     ];
     return () => {
@@ -116,6 +119,14 @@ export default function RunoutApp() {
           book={stocks}
           onOrder={(order) => gameBus.emit("stock-order", order)}
           onClose={() => gameBus.emit("stocks-close")}
+        />
+      )}
+      {screen === "play" && grocery && (
+        <GroceryCounter
+          shelf={grocery}
+          onBuy={(index) => gameBus.emit("grocery-buy", index)}
+          onBuyStore={() => gameBus.emit("grocery-store")}
+          onClose={() => gameBus.emit("grocery-close")}
         />
       )}
       {screen === "play" && online && clerkEnabled && <CityLink hud={hud} />}

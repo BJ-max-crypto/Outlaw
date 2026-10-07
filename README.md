@@ -22,7 +22,7 @@ Open [http://localhost:3000](http://localhost:3000).
 - After you clock in, shift pay continues anywhere on the island.
 - A chase lasts 90 seconds. The timer at the top is how long until the cops quit.
 - **Hold R** inside a business you do not own to rob the register.
-- **1 / 2 / 3** at the grocery to buy food. **G** eats it and restores energy.
+- Walk into the grocery and the counter opens. Buy a taco, burger, or drink there. **G** eats what you are carrying and restores energy.
 - **Pinch** with two fingers to zoom the island. A trackpad pinch (ctrl + scroll) does the same. You stay in the center of the screen.
 - Click the corner **map** to expand it. **M** toggles it too.
 

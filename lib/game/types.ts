@@ -67,6 +67,23 @@ export type StockOrder = {
   side: "buy" | "sell";
 };
 
+export type GroceryItem = {
+  id: string;
+  name: string;
+  price: number;
+  energy: number;
+  health: number;
+};
+
+export type GroceryShelf = {
+  cash: number;
+  food: number;
+  packSize: number;
+  ownsStore: boolean;
+  storePrice: number;
+  items: GroceryItem[];
+};
+
 export type GameEventMap = {
   start: undefined;
   hud: HudSnapshot;
@@ -81,5 +98,9 @@ export type GameEventMap = {
   stocks: StockBook | null;
   "stock-order": StockOrder;
   "stocks-close": undefined;
+  grocery: GroceryShelf | null;
+  "grocery-buy": number;
+  "grocery-store": undefined;
+  "grocery-close": undefined;
   escape: number | null;
 };
