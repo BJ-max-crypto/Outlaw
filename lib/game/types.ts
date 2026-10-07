@@ -15,6 +15,7 @@ export type HudSnapshot = {
   maxGas: number;
   businesses: string[];
   vehicles: string[];
+  netWorth: number;
 };
 
 export type MapMarker = {
@@ -40,6 +41,12 @@ export type CityProfile = {
   employed: boolean;
   businesses: string[];
   vehicles: string[];
+  levels?: Record<string, number>;
+  shares?: Record<string, number>;
+  basis?: Record<string, number>;
+  items?: string[];
+  stockProfit?: number;
+  objectivesDone?: number;
 };
 
 export type Peer = {
@@ -61,6 +68,10 @@ export type StockQuote = {
 export type StockBook = {
   cash: number;
   quotes: StockQuote[];
+  portfolio: number;
+  invested: number;
+  profit: number;
+  returnPct: number;
 };
 
 export type StockOrder = {
@@ -110,6 +121,11 @@ export type GameEventMap = {
   session: SessionView;
   "spawn-boat": undefined;
   "island-offer": { id: string; username: string; worth: string } | null;
+  ledger: import("@/lib/economy/model").EconomyView;
+  "ledger-deny": string;
+  "business-buy": string;
+  "visit-port": undefined;
+  "owned-spot": { id: string; name: string } | null;
 };
 
 export type SessionView = {

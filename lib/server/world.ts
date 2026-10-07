@@ -1,6 +1,7 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import { islandIncome, type IslandCard } from "@/game/mode/match";
+import { heldIncome, islandIncome, type IslandCard } from "@/game/mode/match";
 import { TUNING } from "@/game/tuning";
+import type { EconomyData } from "@/lib/economy/model";
 import { rewardById } from "@/lib/shop/rewards";
 
 export type Account = {
@@ -11,6 +12,10 @@ export type Account = {
   employed: boolean;
   businesses: string[];
   vehicles: string[];
+  economy?: EconomyData;
+  rewardScale?: number;
+  rewardUntil?: number;
+  stakeCredit?: number;
 };
 
 export type SessionState = {
@@ -20,8 +25,12 @@ export type SessionState = {
   members: IslandCard[];
 };
 
-const accounts = new Map<string, Account>();
-const sessions = new Map<string, SessionState>();
+const store = globalThis as typeof globalThis & {
+  __runout?: { accounts: Map<string, Account>; sessions: Map<string, SessionState> };
+};
+store.__runout ??= { accounts: new Map(), sessions: new Map() };
+const accounts = store.__runout.accounts;
+const sessions = store.__runout.sessions;
 
 function database(): SupabaseClient | null {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -39,6 +48,10 @@ function code(): string {
 
 export function getAccount(id: string): Account | null {
   return accounts.get(id) ?? null;
+}
+
+export function listAccounts(): Account[] {
+  return [...accounts.values()];
 }
 
 export function saveAccount(account: Account): Account {
@@ -62,6 +75,8 @@ export function saveAccount(account: Account): Account {
       employed: next.employed,
       businesses: next.businesses,
       vehicles: next.vehicles,
+      economy: next.economy ?? {},
+      last_seen: new Date(next.economy?.lastSeen ?? Date.now()).toISOString(),
       updated_at: new Date().toISOString(),
     });
   }
@@ -75,7 +90,7 @@ export async function loadAccount(id: string): Promise<Account | null> {
   if (!db) return null;
   const { data } = await db
     .from("profiles")
-    .select("username, display_name, cash, energy, employed, businesses, vehicles")
+    .select("username, display_name, cash, energy, employed, businesses, vehicles, economy, last_seen")
     .eq("id", id)
     .maybeSingle();
   if (!data) return null;
@@ -87,7 +102,12 @@ export async function loadAccount(id: string): Promise<Account | null> {
     employed: Boolean(data.employed),
     businesses: data.businesses ?? [],
     vehicles: data.vehicles ?? [],
+    economy: data.economy && typeof data.economy === "object" ? (data.economy as EconomyData) : undefined,
   };
+  if (account.economy && data.last_seen) {
+    const seen = Date.parse(String(data.last_seen));
+    if (Number.isFinite(seen)) account.economy.lastSeen = seen;
+  }
   accounts.set(id, account);
   return account;
 }
@@ -222,11 +242,29 @@ export function leading(session: SessionState, id: string): boolean {
 export function claimReward(id: string, rewardId: string): { rewardId: string; multiplier: number; ms: number; cash: number } | null {
   const reward = rewardById(rewardId);
   if (!reward) return null;
+  const account = getAccount(id);
+  if (account) {
+    if (reward.multiplier > 1 && reward.ms > 0) {
+      account.rewardScale = reward.multiplier;
+      account.rewardUntil = Date.now() + reward.ms;
+    }
+    if (reward.cash > 0) account.stakeCredit = (account.stakeCredit ?? 0) + reward.cash;
+  }
   const db = database();
   if (db) {
     void db.from("shop_claims").insert({ player_id: id, reward_id: reward.id });
   }
   return { rewardId: reward.id, multiplier: reward.multiplier, ms: reward.ms, cash: reward.cash };
+}
+
+/** Extra cash per minute from islands and reinforcements this player holds in a live session. */
+export function heldPayPerMinute(playerId: string): number {
+  for (const session of sessions.values()) {
+    if (session.status !== "live") continue;
+    if (!session.members.some((member) => member.id === playerId)) continue;
+    return heldIncome(session.members, playerId) * (60_000 / TUNING.jobIntervalMs);
+  }
+  return 0;
 }
 
 function blankMember(id: string, username: string): IslandCard {

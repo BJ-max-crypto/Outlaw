@@ -15,6 +15,9 @@ export default function StockDesk({ book, onOrder, onClose }: StockDeskProps) {
         <div>
           <p className="text-[11px] font-semibold tracking-[0.32em] text-[#e25b2a]">STOCK INVESTMENT</p>
           <p className="font-display mt-1 text-4xl leading-none text-[#f4f1ea]">{formatCash(book.cash)}</p>
+          <p className="mt-2 text-[11px] tracking-[0.08em] text-[#a39e94]">
+            PORTFOLIO {formatCash(book.portfolio)} · INVESTED {formatCash(book.invested)} · P/L {signedCash(book.profit)} ({book.returnPct}%)
+          </p>
         </div>
         <button
           type="button"
@@ -82,6 +85,12 @@ function QuoteOrder({ quote, cash, onOrder }: { quote: StockQuote; cash: number;
       </button>
     </div>
   );
+}
+
+function signedCash(amount: number): string {
+  const rounded = Math.round(amount);
+  const sign = rounded > 0 ? "+" : rounded < 0 ? "-" : "";
+  return `${sign}$${Math.abs(rounded).toLocaleString("en-US")}`;
 }
 
 function changeOf(quote: StockQuote): number {

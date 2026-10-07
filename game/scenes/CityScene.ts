@@ -1,6 +1,6 @@
 import Phaser from "phaser";
 import { gameBus } from "@/lib/game/bus";
-import type { CityProfile, Peer, SessionView, StockOrder } from "@/lib/game/types";
+import type { CityProfile, Peer, SessionView } from "@/lib/game/types";
 import { Siren } from "@/game/audio/siren";
 import { Player, type MoveInput } from "@/game/entities/Player";
 import { createActorTextures } from "@/game/entities/textures";
@@ -9,6 +9,8 @@ import { buildCityMap, closestSpawns, createWallBodies, paintCity, type PlacedBu
 import { rectContains } from "@/game/map/geometry";
 import { MAP_SCALE, isWaterWorld, landIslandIndex, setIslandOrigins } from "@/game/map/waterMask";
 import { getMatch, heldIncome, islandIncome, islandOrigin, ISLAND_SPAN, orderIslands, setMatch, takePendingProfile } from "@/game/mode/match";
+import type { EconomyView } from "@/lib/economy/model";
+import { businessPerMinute } from "@/lib/economy/model";
 import { formatCash } from "@/lib/game/format";
 import { CityState } from "@/game/state/CityState";
 import { PoliceDirector } from "@/game/systems/PoliceDirector";
@@ -51,6 +53,10 @@ export class CityScene extends Phaser.Scene {
   private lastPrompt: string | null = null;
   private gasEmpty = false;
   private wasOnShift = false;
+  private buyLock = false;
+  private serverMarket = false;
+  private wasInPort = false;
+  private lastSpot: string | null = null;
   private bannerToken = 0;
   private robReadyAt = new Map<string, number>();
   private peers = new Map<string, { sprite: Phaser.GameObjects.Sprite; label: Phaser.GameObjects.Text }>();
@@ -65,6 +71,7 @@ export class CityScene extends Phaser.Scene {
   private offProfile: (() => void) | null = null;
   private offPeers: (() => void) | null = null;
   private offOrder: (() => void) | null = null;
+  private offLedgerDeny: (() => void) | null = null;
   private offStocksClose: (() => void) | null = null;
   private offGroceryBuy: (() => void) | null = null;
   private offGroceryStore: (() => void) | null = null;
@@ -143,6 +150,10 @@ export class CityScene extends Phaser.Scene {
     this.groceryDismissed = false;
     this.gasEmpty = false;
     this.wasOnShift = false;
+    this.buyLock = false;
+    this.serverMarket = false;
+    this.wasInPort = false;
+    this.lastSpot = null;
     this.viewZoom = 1.52;
     this.lastPinch = 0;
     this.hasBoat = false;
@@ -196,7 +207,11 @@ export class CityScene extends Phaser.Scene {
     });
     this.offProfile = gameBus.on("profile", (profile) => this.applyProfile(profile));
     this.offPeers = gameBus.on("peers", (list) => this.syncPeers(list));
-    this.offOrder = gameBus.on("stock-order", (order) => this.trade(order));
+    this.offOrder = gameBus.on("ledger", (view) => this.applyLedger(view));
+    this.offLedgerDeny = gameBus.on("ledger-deny", (reason) => {
+      this.buyLock = false;
+      this.popup(this.player.x, this.player.y - 28, reason, "#f4f1ea");
+    });
     this.offStocksClose = gameBus.on("stocks-close", () => this.closeStocks());
     this.offGroceryBuy = gameBus.on("grocery-buy", (index) => this.buyFood(index));
     this.offGroceryStore = gameBus.on("grocery-store", () => this.buyStore());
@@ -218,6 +233,7 @@ export class CityScene extends Phaser.Scene {
       this.offProfile?.();
       this.offPeers?.();
       this.offOrder?.();
+      this.offLedgerDeny?.();
       this.offStocksClose?.();
       this.offGroceryBuy?.();
       this.offGroceryStore?.();
@@ -263,6 +279,12 @@ export class CityScene extends Phaser.Scene {
     if (match.autostart) {
       this.live = true;
       this.focusGame();
+    }
+    if (match.mode === "multi") {
+      this.player.setPosition(this.map.playerSpawn.x, this.map.playerSpawn.y);
+      const body = this.player.body as Phaser.Physics.Arcade.Body | null;
+      body?.reset(this.map.playerSpawn.x, this.map.playerSpawn.y);
+      this.time.delayedCall(400, () => this.flash("YOUR ISLAND"));
     }
     this.contain();
     this.pushHud();
@@ -311,6 +333,7 @@ export class CityScene extends Phaser.Scene {
     if (this.escapeMs <= 0) this.decayWanted(delta);
     this.tickEscape(delta);
     this.handleActions();
+    this.watchPort();
     this.watchIslands();
     this.syncGrocery();
     this.runRobbery(delta);
@@ -376,6 +399,17 @@ export class CityScene extends Phaser.Scene {
     const count = match.mode === "multi" ? Math.max(1, match.islands.length) : 1;
     const origins = Array.from({ length: count }, (_, index) => islandOrigin(index));
     setIslandOrigins(origins);
+    if (match.mode === "multi" && origins.length > 0) {
+      const home = match.islands[0]?.username || match.username || "ISLAND";
+      this.add
+        .text(ISLAND_SPAN / 2, 90, home, {
+          fontFamily: "Arial Black, Arial, sans-serif",
+          fontSize: "42px",
+          color: "#f4f1ea",
+        })
+        .setOrigin(0.5)
+        .setDepth(6);
+    }
     for (let index = 1; index < origins.length; index += 1) {
       const origin = origins[index];
       this.add.image(origin.x, origin.y, "island").setOrigin(0, 0).setScale(MAP_SCALE).setDepth(0);
@@ -697,12 +731,13 @@ export class CityScene extends Phaser.Scene {
     }
     const spot = this.businessAt();
     if (!spot || this.state.owns(spot.id)) return;
-    if (!this.state.spend(spot.price)) {
-      this.popup(this.player.x, this.player.y - 28, "NEED CASH", "#f4f1ea");
-      return;
-    }
-    this.state.ownedBusinesses.add(spot.id);
-    this.popup(this.player.x, this.player.y - 28, spot.name, "#d7c08a");
+    this.requestBusiness(spot.id);
+  }
+
+  private requestBusiness(id: string): void {
+    if (this.buyLock || this.state.owns(id)) return;
+    this.buyLock = true;
+    gameBus.emit("business-buy", id);
   }
 
   private stealFocused(): void {
@@ -848,15 +883,7 @@ export class CityScene extends Phaser.Scene {
 
   private buyStore(): void {
     if (!this.inGrocery() || this.state.owns("grocery")) return;
-    const price = businessById("grocery")?.price ?? 0;
-    if (!this.state.spend(price)) {
-      this.popup(this.player.x, this.player.y - 28, "NEED CASH", "#f4f1ea");
-      if (this.groceryOpen) this.emitGrocery();
-      return;
-    }
-    this.state.ownedBusinesses.add("grocery");
-    this.popup(this.player.x, this.player.y - 28, "GROCERY", "#d7c08a");
-    if (this.groceryOpen) this.emitGrocery();
+    this.requestBusiness("grocery");
   }
 
   private syncGrocery(): void {
@@ -939,39 +966,68 @@ export class CityScene extends Phaser.Scene {
         shares: this.state.sharesOf(quote.id),
         history: quote.history.slice(),
       })),
+      ...this.stockSummary(),
     });
   }
 
-  private trade(order: StockOrder): void {
-    if (!this.stockOpen) return;
-    const quote = this.quotes.find((item) => item.id === order.id);
-    if (!quote) return;
-    const quantity = Math.min(9999, Math.max(1, Math.floor(order.quantity) || 1));
-    if (order.side === "buy") {
-      const cost = quote.price * quantity;
-      if (!this.state.spend(cost)) {
-        this.popup(this.player.x, this.player.y - 28, "NEED CASH", "#f4f1ea");
-        this.emitStocks();
-        return;
-      }
-      this.state.addShares(quote.id, quantity);
-      this.popup(this.player.x, this.player.y - 28, `${quantity} ${quote.name}`, "#d7c08a");
-    } else {
-      const sold = this.state.takeShares(quote.id, quantity);
-      if (sold > 0) {
-        const gain = quote.price * sold;
-        this.state.cash += gain;
-        this.popup(this.player.x, this.player.y - 28, `+$${gain}`, "#7dcea0");
+  private stockSummary(): { portfolio: number; invested: number; profit: number; returnPct: number } {
+    const prices = Object.fromEntries(this.quotes.map((quote) => [quote.id, quote.price]));
+    const portfolio = this.state.portfolio(prices);
+    const invested = this.state.invested();
+    const profit = portfolio - invested;
+    return {
+      portfolio,
+      invested,
+      profit,
+      returnPct: invested > 0 ? Math.round((profit / invested) * 1000) / 10 : 0,
+    };
+  }
+
+  private applyLedger(view: EconomyView): void {
+    this.buyLock = false;
+    this.state.applyHoldings({
+      cash: view.cash,
+      levels: view.levels,
+      shares: view.shares,
+      basis: view.basis,
+      items: view.items,
+      realized: view.realized,
+      incomeScale: view.incomeScale,
+    });
+    if (view.quotes.length > 0) {
+      this.serverMarket = true;
+      for (const quote of this.quotes) {
+        const next = view.quotes.find((item) => item.id === quote.id);
+        if (!next) continue;
+        quote.price = next.price;
+        quote.history = next.history.slice();
       }
     }
-    this.emitStocks();
+    if (view.fresh.length > 0) this.flash(view.fresh.join(" · "));
+    if (this.groceryOpen) this.emitGrocery();
+    if (this.stockOpen) this.emitStocks();
     this.pushHud();
+  }
+
+  private watchPort(): void {
+    const inside = this.inJob();
+    if (inside && !this.wasInPort) gameBus.emit("visit-port");
+    this.wasInPort = inside;
+    const spot = this.businessAt();
+    const owned = spot && this.state.owns(spot.id) ? spot.id : null;
+    if (owned === this.lastSpot) return;
+    this.lastSpot = owned;
+    gameBus.emit("owned-spot", owned && spot ? { id: spot.id, name: spot.name } : null);
   }
 
   private tickMarket(delta: number): void {
     this.marketMs += delta;
     if (this.marketMs < 3000) return;
     this.marketMs = 0;
+    if (this.serverMarket) {
+      if (this.stockOpen) this.emitStocks();
+      return;
+    }
     for (const quote of this.quotes) {
       const next = quote.price * (1 + (Math.random() - 0.5) * 0.12);
       quote.price = Math.round(Math.min(400, Math.max(8, next)));
@@ -1053,7 +1109,30 @@ export class CityScene extends Phaser.Scene {
     this.state.energy = profile.energy;
     this.state.employed = profile.employed;
     this.state.ownedBusinesses.clear();
-    for (const id of profile.businesses) this.state.ownedBusinesses.add(id);
+    for (const id of profile.businesses) {
+      this.state.ownedBusinesses.add(id);
+      if (!this.state.businessLevels.has(id)) this.state.businessLevels.set(id, 1);
+    }
+    for (const id of [...this.state.businessLevels.keys()]) {
+      if (!this.state.ownedBusinesses.has(id)) this.state.businessLevels.delete(id);
+    }
+    if (profile.levels) {
+      for (const [id, level] of Object.entries(profile.levels)) {
+        this.state.ownedBusinesses.add(id);
+        this.state.businessLevels.set(id, level);
+      }
+    }
+    if (profile.shares && profile.basis) {
+      this.state.applyHoldings({
+        cash: this.state.cash,
+        levels: Object.fromEntries(this.state.businessLevels),
+        shares: profile.shares,
+        basis: profile.basis,
+        items: (profile.items ?? []).map((id) => ({ id })),
+        realized: profile.stockProfit ?? this.state.stockProfit,
+        incomeScale: this.state.incomeScale,
+      });
+    }
     this.state.ownedVehicles.clear();
     for (const ride of this.rides) {
       ride.owned = ride.id === "yacht" || profile.vehicles.includes(ride.id);
@@ -1190,7 +1269,8 @@ export class CityScene extends Phaser.Scene {
     } else if (spot && !this.state.owns(spot.id)) {
       lines.push(this.canRob(spot.id) ? `E BUY $${spot.price} · HOLD R TO ROB` : "COME BACK LATER");
     } else if (spot) {
-      lines.push("YOU OWN THIS");
+      const level = this.state.levelOf(spot.id);
+      lines.push(`LEVEL ${level} · ${formatCash(businessPerMinute(spot.id, level, this.state.incomeScale))}/MIN`);
     }
     if (this.state.food.length > 0) lines.push("G EAT");
     return lines.length > 0 ? lines.join(" · ") : null;
@@ -1206,6 +1286,7 @@ export class CityScene extends Phaser.Scene {
   private pushHud(): void {
     this.state.health = this.player.health;
     const snapshot = this.state.snapshot(this.hint(), this.state.employed && this.inJob());
+    snapshot.netWorth = this.state.worth(Object.fromEntries(this.quotes.map((quote) => [quote.id, quote.price])));
     if (this.riding) {
       snapshot.driving = true;
       snapshot.gas = this.riding.gas;
@@ -1224,6 +1305,7 @@ export class CityScene extends Phaser.Scene {
       Math.round(snapshot.gas),
       snapshot.businesses.join(","),
       snapshot.vehicles.join(","),
+      Math.round(snapshot.netWorth),
     ].join("|");
     if (hudKey === this.lastHudKey) return;
     this.lastHudKey = hudKey;

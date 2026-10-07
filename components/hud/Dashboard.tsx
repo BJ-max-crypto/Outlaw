@@ -10,6 +10,7 @@ type DashboardProps = {
   username: string;
   canContinue: boolean;
   session: SessionView | null;
+  selfId: string;
   notice: string;
   onUsername: (username: string) => void;
   onSingle: () => void;
@@ -35,6 +36,7 @@ function DashboardBody({
   username,
   canContinue,
   session,
+  selfId,
   notice,
   onUsername,
   onSingle,
@@ -163,10 +165,13 @@ function DashboardBody({
                   </li>
                 ))}
               </ul>
-              {session.status === "lobby" && (
+              {session.status === "lobby" && session.hostId === selfId && (
                 <button type="button" onClick={onStart} className="mt-4 rounded-full bg-[#f4f1ea] px-6 py-2 text-sm font-semibold tracking-[0.16em] text-[#17191e]">
                   START GAME
                 </button>
+              )}
+              {session.status === "lobby" && session.hostId !== selfId && (
+                <p className="mt-4 text-sm text-[#a39e94]">Waiting for the host to start.</p>
               )}
             </div>
           )}

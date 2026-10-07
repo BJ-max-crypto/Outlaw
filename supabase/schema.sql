@@ -13,6 +13,8 @@ alter table public.profiles enable row level security;
 
 alter table public.profiles add column if not exists username text;
 alter table public.profiles alter column cash type bigint;
+alter table public.profiles add column if not exists economy jsonb not null default '{}'::jsonb;
+alter table public.profiles add column if not exists last_seen timestamptz not null default now();
 
 create table if not exists public.sessions (
   code text primary key,

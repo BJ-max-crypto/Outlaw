@@ -12,9 +12,10 @@ type HudProps = {
   pos: WorldPos | null;
   mapOpen: boolean;
   onToggleMap: () => void;
+  onPanel: (panel: "goals" | "profile" | "ranks") => void;
 };
 
-export default function Hud({ hud, prompt, robbery, banner, escapeMs, map, pos, mapOpen, onToggleMap }: HudProps) {
+export default function Hud({ hud, prompt, robbery, banner, escapeMs, map, pos, mapOpen, onToggleMap, onPanel }: HudProps) {
   const healthPct = Math.max(0, Math.min(100, (hud.health / hud.maxHealth) * 100));
   const energyPct = Math.max(0, Math.min(100, (hud.energy / hud.maxEnergy) * 100));
 
@@ -42,6 +43,7 @@ export default function Hud({ hud, prompt, robbery, banner, escapeMs, map, pos, 
         <p key={hud.cash} className="pop font-display mt-1 text-5xl leading-none text-[#d7c08a]">
           {formatCash(hud.cash)}
         </p>
+        <p className="mt-1 text-[10px] tracking-[0.16em] text-[#a39e94]">NET WORTH {formatCash(hud.netWorth)}</p>
         {hud.driving && (
           <Meter label="GAS" value={Math.max(0, Math.min(100, (hud.gas / hud.maxGas) * 100))} color={hud.gas / hud.maxGas < 0.2 ? "#e25b2a" : "#e2b34a"} />
         )}
@@ -56,6 +58,11 @@ export default function Hud({ hud, prompt, robbery, banner, escapeMs, map, pos, 
         <p className="mt-4 text-[11px] font-medium tracking-[0.14em] text-[#d9d3c7]">
           {hud.onShift ? "ON SHIFT" : hud.employed ? "CLOCKED IN" : "NO JOB"} · FOOD {hud.food}
         </p>
+        <div className="mt-3 flex gap-1">
+          <PanelButton label="GOALS" onClick={() => onPanel("goals")} />
+          <PanelButton label="PROFILE" onClick={() => onPanel("profile")} />
+          <PanelButton label="RANKS" onClick={() => onPanel("ranks")} />
+        </div>
       </section>
 
       <MiniMap map={map} pos={pos} open={mapOpen} onToggle={onToggleMap} />
@@ -95,6 +102,18 @@ function formatEscape(ms: number): string {
   const minutes = Math.floor(total / 60);
   const seconds = total % 60;
   return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+}
+
+function PanelButton({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="pointer-events-auto flex-1 rounded-full border border-white/10 py-1 text-[9px] font-semibold tracking-[0.12em] text-[#f4f1ea]"
+    >
+      {label}
+    </button>
+  );
 }
 
 function Meter({ label, value, color }: { label: string; value: number; color: string }) {

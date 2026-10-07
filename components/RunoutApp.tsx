@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import GameCanvas from "@/components/game/GameCanvas";
 import Dashboard from "@/components/hud/Dashboard";
+import DepthLayer, { type BoardName, type DepthPanel } from "@/components/hud/DepthLayer";
 import GroceryCounter from "@/components/hud/GroceryCounter";
 import Hud from "@/components/hud/Hud";
 import IslandActions from "@/components/hud/IslandActions";
@@ -14,7 +15,8 @@ import { getMatch, orderIslands, setMatch, setPendingProfile, type IslandCard } 
 import { primeAudio } from "@/game/audio/siren";
 import { TUNING } from "@/game/tuning";
 import { gameBus } from "@/lib/game/bus";
-import type { CityProfile, GroceryShelf, HudSnapshot, MapSnapshot, SessionView, StockBook, WorldPos } from "@/lib/game/types";
+import type { EconomyView } from "@/lib/economy/model";
+import type { CityProfile, GroceryShelf, HudSnapshot, MapSnapshot, SessionView, StockBook, StockOrder, WorldPos } from "@/lib/game/types";
 import { localPlayerId, localUsername, playerHeaders, readSave, rememberUsername, writeSave } from "@/lib/online/player";
 
 type Screen = "dashboard" | "play";
@@ -38,6 +40,7 @@ const initialHud: HudSnapshot = {
   maxGas: 100,
   businesses: [],
   vehicles: [],
+  netWorth: TUNING.startingCash,
 };
 
 function boot(mode: "single" | "multi", session: SessionView | null, username: string): void {
@@ -78,15 +81,34 @@ export default function RunoutApp() {
   const [paused, setPaused] = useState(false);
   const [canReturn, setCanReturn] = useState(false);
   const [mode, setMode] = useState<"single" | "multi">("single");
+  const [view, setView] = useState<EconomyView | null>(null);
+  const [subject, setSubject] = useState<EconomyView | null>(null);
+  const [panel, setPanel] = useState<DepthPanel>(null);
+  const [spot, setSpot] = useState<{ id: string; name: string } | null>(null);
+  const [board, setBoard] = useState<BoardName>("netWorth");
+  const [rows, setRows] = useState<{ id: string; username: string; value: number }[]>([]);
+  const [selfRank, setSelfRank] = useState<number | null>(null);
   const hudRef = useRef(hud);
   hudRef.current = hud;
   const modeRef = useRef(mode);
   modeRef.current = mode;
+  const viewRef = useRef<EconomyView | null>(null);
+  const usernameRef = useRef(username);
+  usernameRef.current = username;
+  const tail = useRef(Promise.resolve());
+  const hudAt = useRef(0);
+  const playAt = useRef(0);
+  const postRef = useRef<(extra: Record<string, unknown>, quiet: boolean) => Promise<void>>(async () => undefined);
+  const playMultiRef = useRef<(next: SessionView) => void>(() => undefined);
+  const liveBoot = useRef("");
 
   useEffect(() => {
     setUsername(localUsername());
     const unsub = [
-      gameBus.on("hud", setHud),
+      gameBus.on("hud", (next) => {
+        hudAt.current = Date.now();
+        setHud(next);
+      }),
       gameBus.on("prompt", setPrompt),
       gameBus.on("robbery", setRobbery),
       gameBus.on("banner", setBanner),
@@ -97,6 +119,16 @@ export default function RunoutApp() {
       gameBus.on("grocery", setGrocery),
       gameBus.on("escape", setEscapeMs),
       gameBus.on("island-offer", setOffer),
+      gameBus.on("owned-spot", setSpot),
+      gameBus.on("business-buy", (id) => {
+        void postRef.current({ action: "buy-business", businessId: id }, false);
+      }),
+      gameBus.on("stock-order", (order: StockOrder) => {
+        void postRef.current({ action: "trade", stockId: order.id, quantity: order.quantity, side: order.side }, false);
+      }),
+      gameBus.on("visit-port", () => {
+        void postRef.current({ action: "visit" }, true);
+      }),
       gameBus.on("menu", () => {
         const single = modeRef.current === "single";
         if (single) currentGame()?.scene.pause("city");
@@ -113,30 +145,34 @@ export default function RunoutApp() {
   useEffect(() => {
     if (screen === "play" || !session || session.status !== "lobby") return;
     const code = session.code;
-    const timer = window.setInterval(() => {
+    let stopped = false;
+    const tick = () => {
       void fetch(`/api/session?code=${code}`, { headers: playerHeaders() })
         .then((response) => response.json())
         .then((data: { session?: SessionView }) => {
-          if (data.session?.status === "lobby") setSession(data.session);
+          if (stopped || !data.session) return;
+          if (data.session.status === "live") {
+            stopped = true;
+            playMultiRef.current(data.session);
+            return;
+          }
+          setSession(data.session);
         })
         .catch(() => undefined);
-    }, 1200);
-    return () => window.clearInterval(timer);
-  }, [screen, session]);
+    };
+    tick();
+    const timer = window.setInterval(tick, 600);
+    return () => {
+      stopped = true;
+      window.clearInterval(timer);
+    };
+  }, [screen, session?.code, session?.status]);
 
   useEffect(() => {
     if (screen !== "play") return;
     const timer = window.setInterval(() => {
+      void postRef.current({ action: "sync" }, true);
       const snap = hudRef.current;
-      const body = JSON.stringify({
-        cash: snap.cash,
-        energy: snap.energy,
-        employed: snap.employed,
-        businesses: snap.businesses,
-        vehicles: snap.vehicles,
-      });
-      writeSave(body);
-      void fetch("/api/profile", { method: "POST", headers: playerHeaders(), body });
       const match = getMatch();
       if (match.mode === "multi" && match.code) {
         void fetch("/api/session", {
@@ -161,8 +197,116 @@ export default function RunoutApp() {
           .catch(() => undefined);
       }
     }, 4000);
-    return () => window.clearInterval(timer);
+    const kick = window.setTimeout(() => {
+      void postRef.current({ action: "sync" }, true);
+    }, 700);
+    return () => {
+      window.clearInterval(timer);
+      window.clearTimeout(kick);
+    };
   }, [screen]);
+
+  useEffect(() => {
+    if (panel !== "ranks") return;
+    void fetch(`/api/leaderboard?board=${board}`, { headers: playerHeaders() })
+      .then((response) => response.json())
+      .then((data: { rows?: { id: string; username: string; value: number }[]; rank?: number | null }) => {
+        setRows(data.rows ?? []);
+        setSelfRank(data.rank ?? null);
+      })
+      .catch(() => undefined);
+  }, [panel, board, view?.netWorth, view?.cash]);
+
+  const wallet = (): HudSnapshot => {
+    const snap = hudRef.current;
+    const saved = readBlob();
+    const live = playAt.current > 0 && hudAt.current >= playAt.current;
+    if (!live && saved) {
+      return {
+        ...snap,
+        cash: saved.cash,
+        energy: saved.energy,
+        employed: saved.employed,
+        businesses: saved.businesses ?? [],
+        vehicles: saved.vehicles ?? [],
+      };
+    }
+    return snap;
+  };
+
+  const openPlayer = async (id: string) => {
+    if (id === localPlayerId()) {
+      setSubject(null);
+      setPanel("profile");
+      return;
+    }
+    const response = await fetch(`/api/leaderboard?player=${encodeURIComponent(id)}`);
+    const data = (await response.json()) as { profile?: EconomyView | null };
+    if (!data.profile) return;
+    setSubject(data.profile);
+    setPanel("profile");
+  };
+
+  const postEconomy = (extra: Record<string, unknown>, quiet: boolean): Promise<void> => {
+    const run = tail.current.then(async () => {
+      try {
+      const snap = wallet();
+      const saved = readBlob();
+      const economy = viewRef.current;
+      const response = await fetch("/api/economy", {
+        method: "POST",
+        headers: playerHeaders(),
+        body: JSON.stringify({
+          username: usernameRef.current,
+          cash: snap.cash,
+          energy: snap.energy,
+          employed: snap.employed,
+          onShift: snap.onShift,
+          businesses: snap.businesses,
+          vehicles: snap.vehicles,
+          levels: economy?.levels ?? saved?.levels,
+          shares: economy?.shares ?? saved?.shares,
+          basis: economy?.basis ?? saved?.basis,
+          items: economy ? economy.items.map((item) => item.id) : saved?.items,
+          stockProfit: economy?.realized ?? saved?.stockProfit,
+          objectivesDone: economy?.objectivesDone ?? saved?.objectivesDone,
+          ...extra,
+        }),
+      });
+      const data = (await response.json()) as { view?: EconomyView; reason?: string };
+      if (data.view) {
+        viewRef.current = data.view;
+        setView(data.view);
+        if (subject && subject.username === data.view.username) setSubject(data.view);
+        gameBus.emit("ledger", data.view);
+        writeSave(
+          JSON.stringify({
+            cash: data.view.cash,
+            energy: snap.energy,
+            employed: snap.employed,
+            businesses: data.view.businesses.map((business) => business.id),
+            vehicles: snap.vehicles,
+            levels: data.view.levels,
+            shares: data.view.shares,
+            basis: data.view.basis,
+            items: data.view.items.map((item) => item.id),
+            stockProfit: data.view.realized,
+            objectivesDone: data.view.objectivesDone,
+          }),
+        );
+      }
+      if (!response.ok && !quiet) gameBus.emit("ledger-deny", data.reason ?? "NOT YET");
+      } catch {
+        if (!quiet) gameBus.emit("ledger-deny", "NOT YET");
+      }
+    });
+    tail.current = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  };
+  postRef.current = postEconomy;
 
   const saveName = async (value: string) => {
     const trimmed = value.trim();
@@ -194,6 +338,7 @@ export default function RunoutApp() {
 
   const playSingle = async () => {
     primeAudio();
+    playAt.current = Date.now();
     setMode("single");
     setSession(null);
     setOffer(null);
@@ -219,14 +364,18 @@ export default function RunoutApp() {
       setSession(next);
       return;
     }
+    if (liveBoot.current === next.code) return;
+    liveBoot.current = next.code;
     primeAudio();
+    playAt.current = Date.now();
     setMode("multi");
     setSession(next);
-    boot("multi", next, username);
+    boot("multi", next, usernameRef.current || username);
     setPaused(false);
     setCanReturn(false);
     setScreen("play");
   };
+  playMultiRef.current = playMulti;
 
   const createLobby = async () => {
     setNotice("");
@@ -259,7 +408,7 @@ export default function RunoutApp() {
   };
 
   const startLobby = async () => {
-    if (!session) return;
+    if (!session || session.hostId !== localPlayerId()) return;
     const response = await fetch("/api/session", {
       method: "POST",
       headers: playerHeaders(),
@@ -320,6 +469,7 @@ export default function RunoutApp() {
           username={username}
           canContinue={canReturn}
           session={session && session.status === "lobby" ? session : null}
+          selfId={localPlayerId()}
           notice={notice}
           onUsername={(value) => void saveName(value)}
           onSingle={() => void playSingle()}
@@ -340,6 +490,29 @@ export default function RunoutApp() {
           pos={pos}
           mapOpen={mapOpen}
           onToggleMap={() => setMapOpen((open) => !open)}
+          onPanel={(next) => {
+            setSubject(null);
+            setPanel(next);
+          }}
+        />
+      )}
+      {screen === "play" && (
+        <DepthLayer
+          view={panel === "profile" && subject ? subject : view}
+          panel={panel}
+          spot={spot}
+          board={board}
+          rows={rows}
+          selfRank={selfRank}
+          onPanel={(next) => {
+            setSubject(null);
+            setPanel(next);
+          }}
+          onBoard={setBoard}
+          onUpgrade={(id) => void postEconomy({ action: "upgrade", businessId: id }, false)}
+          onClaimGoal={(id) => void postEconomy({ action: "claim-objective", businessId: id }, false)}
+          onClaimEvent={(id) => void postEconomy({ action: "claim-event", eventId: id }, false)}
+          onOpenPlayer={(id) => void openPlayer(id)}
         />
       )}
       {screen === "play" && <ShopButton onReward={(rewardId) => void grantReward(rewardId)} />}
@@ -372,6 +545,18 @@ export default function RunoutApp() {
       )}
     </main>
   );
+}
+
+function readBlob(): CityProfile | null {
+  const raw = readSave();
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as CityProfile;
+    if (!Number.isFinite(parsed.cash)) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
 }
 
 async function grantReward(rewardId: string): Promise<void> {
