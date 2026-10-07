@@ -3,7 +3,7 @@ import { gameBus } from "@/lib/game/bus";
 import type { CityProfile, Peer, SessionView } from "@/lib/game/types";
 import { Siren } from "@/game/audio/siren";
 import { Player, type MoveInput } from "@/game/entities/Player";
-import { AVATAR_PLAYER, placeAvatar } from "@/game/entities/textures";
+import { createPlayerTextures } from "@/game/entities/textures";
 import { Vehicle } from "@/game/entities/Vehicle";
 import { buildCityMap, closestSpawns, createWallBodies, paintCity, type PlacedBusiness } from "@/game/map/cityMap";
 import { rectContains } from "@/game/map/geometry";
@@ -129,7 +129,6 @@ export class CityScene extends Phaser.Scene {
       "boat-deck",
     ];
     for (const file of files) this.load.image(file, `/vehicles/${file}.png`);
-    this.load.image(AVATAR_PLAYER, "/avatars/player.png");
     this.load.image("avatar-cop", "/avatars/cop.png");
   }
 
@@ -177,6 +176,7 @@ export class CityScene extends Phaser.Scene {
     this.siren = new Siren();
 
     paintCity(this);
+    createPlayerTextures(this);
     this.walls = createWallBodies(this, this.map.walls);
     this.blockers = this.map.walls.map((wall) => new Phaser.Geom.Rectangle(wall.x, wall.y, wall.w, wall.h));
     this.layoutIslands();
@@ -1209,20 +1209,16 @@ export class CityScene extends Phaser.Scene {
       seen.add(peer.id);
       let row = this.peers.get(peer.id);
       if (!row) {
-        const sprite = this.add.sprite(peer.x, peer.y, AVATAR_PLAYER).setTint(0xc5d4ff).setDepth(150);
-        placeAvatar(sprite);
+        const sprite = this.add.sprite(peer.x, peer.y, "player-s-0").setScale(1.45).setTint(0x8eb4ff).setDepth(150);
         const label = this.add
-          .text(peer.x, peer.y - 78, peer.name, { fontFamily: "Arial, sans-serif", fontSize: "12px", color: "#d5e4ff" })
+          .text(peer.x, peer.y - 36, peer.name, { fontFamily: "Arial, sans-serif", fontSize: "12px", color: "#d5e4ff" })
           .setOrigin(0.5)
           .setDepth(151);
         row = { sprite, label };
         this.peers.set(peer.id, row);
       }
-      const dx = peer.x - row.sprite.x;
-      const dy = peer.y - row.sprite.y;
-      if (dx * dx + dy * dy > 4) row.sprite.setRotation(Math.atan2(dx, -dy));
       row.sprite.setPosition(peer.x, peer.y).setDepth(150 + peer.y);
-      row.label.setPosition(peer.x, peer.y - 78).setText(peer.name);
+      row.label.setPosition(peer.x, peer.y - 36).setText(peer.name);
     }
     for (const [id, row] of this.peers) {
       if (seen.has(id)) continue;

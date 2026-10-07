@@ -1,6 +1,6 @@
 import Phaser from "phaser";
 import { TUNING } from "@/game/tuning";
-import { AVATAR_PLAYER, faceAngle, fitCircle, placeAvatar } from "./textures";
+import { playerTexture } from "./textures";
 
 export type MoveInput = {
   up: boolean;
@@ -14,19 +14,21 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   health: number = TUNING.playerHealth;
   private invuln = 0;
   private walkMs = 0;
+  private walkFrame: 0 | 1 = 0;
   private moving = false;
 
   constructor(scene: Phaser.Scene, x: number, y: number) {
-    super(scene, x, y, AVATAR_PLAYER);
+    super(scene, x, y, "player-n-0");
     scene.add.existing(this);
     scene.physics.add.existing(this);
-    placeAvatar(this);
+    this.setScale(1.45);
     this.setDepth(200);
     const body = this.body as Phaser.Physics.Arcade.Body;
     body.setDrag(TUNING.playerDrag, TUNING.playerDrag);
     body.setMaxVelocity(TUNING.playerMaxSpeed, TUNING.playerMaxSpeed);
     body.setCollideWorldBounds(true);
-    fitCircle(this);
+    body.setSize(18, 16);
+    this.setOffset(15, 26);
   }
 
   update(input: MoveInput, delta: number, speedScale = 1): void {
@@ -58,11 +60,16 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       body.velocity.scale(maxSpeed / speed);
     }
 
-    if (this.moving) this.walkMs += delta;
-    else this.walkMs = 0;
+    this.walkMs += delta;
+    if (this.moving && this.walkMs > 130) {
+      this.walkMs = 0;
+      this.walkFrame = this.walkFrame === 0 ? 1 : 0;
+    }
+    if (!this.moving) this.walkFrame = 0;
 
-    const step = this.moving ? Math.sin(this.walkMs / 70) * 0.07 : 0;
-    this.setRotation(faceAngle(this.facing) + step);
+    this.setTexture(playerTexture(this.facing, this.walkFrame));
+    this.setFlipX(this.facing === "w");
+    this.setRotation(0);
     this.setDepth(100 + this.y);
 
     if (this.invuln > 0) {
