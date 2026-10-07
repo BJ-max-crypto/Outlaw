@@ -41,7 +41,9 @@ Multiplayer opens an invite code. Friends join with that code, and the host pres
 
 ## Shop
 
-The AdSense loader is in the site head on every page (`app/layout.tsx`, publisher `ca-pub-8078670301082619`). A rewarded shop can double earnings for 30 or 60 seconds, or grant a small cash stake. Those buttons stay hidden until a finished ad can grant the reward (`SHOP_VISIBLE` in `lib/shop/rewards.ts`). The grant route is already live: `POST /api/shop` with `{ "rewardId": "double-earnings" | "overtime" | "stake" }`.
+A STORE button sits in the bottom-left corner during play. It opens the add-ons: 2× speed, 2× earnings, half energy drain, and half gas burn, each for 30 seconds after one rewarded ad. $1,000 costs two finished ads. The AdSense loader stays in the document head (`ca-pub-8078670301082619`). The reward is granted only after the ad is viewed, through `POST /api/shop`.
+
+Getting caught opens a choice. Take the hit and lose half your cash, `Math.floor(cash * 0.5)` kept. Watch an ad and lose a quarter instead, `Math.floor(cash * 0.25)`. Closing the ad or finding none still takes half.
 
 ## Online
 

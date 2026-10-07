@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import GameCanvas from "@/components/game/GameCanvas";
+import BustOffer from "@/components/hud/BustOffer";
 import Dashboard from "@/components/hud/Dashboard";
 import DepthLayer, { type BoardName, type DepthPanel } from "@/components/hud/DepthLayer";
 import GroceryCounter from "@/components/hud/GroceryCounter";
@@ -14,11 +15,13 @@ import { currentGame } from "@/game/createGame";
 import { getMatch, orderIslands, setMatch, setPendingProfile, type IslandCard } from "@/game/mode/match";
 import { primeAudio } from "@/game/audio/siren";
 import { TUNING } from "@/game/tuning";
+import { watchAds } from "@/lib/ads/rewarded";
 import { gameBus } from "@/lib/game/bus";
 import type { EconomyView } from "@/lib/economy/model";
 import type { CityProfile, GroceryShelf, HudSnapshot, MapSnapshot, SessionView, StockBook, StockOrder, WorldPos } from "@/lib/game/types";
 import { usePlayerIdentity } from "@/lib/online/identity";
 import { localUsername, playerHeaders, readSave, rememberUsername, writeSave } from "@/lib/online/player";
+import type { ShopReward } from "@/lib/shop/rewards";
 
 type Screen = "dashboard" | "play";
 
@@ -91,6 +94,9 @@ export default function RunoutApp() {
   const [board, setBoard] = useState<BoardName>("netWorth");
   const [rows, setRows] = useState<{ id: string; username: string; value: number }[]>([]);
   const [selfRank, setSelfRank] = useState<number | null>(null);
+  const [bust, setBust] = useState<{ cash: number; loseHalf: number; loseQuarter: number } | null>(null);
+  const [bustBusy, setBustBusy] = useState(false);
+  const [bustNote, setBustNote] = useState("");
   const hudRef = useRef(hud);
   hudRef.current = hud;
   const modeRef = useRef(mode);
@@ -174,6 +180,15 @@ export default function RunoutApp() {
         setPaused(single);
         setCanReturn(true);
         setScreen("dashboard");
+      }),
+      gameBus.on("bust-offer", (offer) => {
+        setBustNote("");
+        setBustBusy(false);
+        setBust(offer);
+      }),
+      gameBus.on("bust-resolve", () => {
+        setBust(null);
+        setBustBusy(false);
       }),
     ];
     return () => {
@@ -499,6 +514,21 @@ export default function RunoutApp() {
     if (action === "island") setOffer(null);
   };
 
+  const softenBust = async () => {
+    setBustBusy(true);
+    setBustNote("");
+    const result = await watchAds(1, {
+      onStart: () => gameBus.emit("ad-hold", true),
+      onEnd: () => gameBus.emit("ad-hold", false),
+    });
+    if (result === "viewed") {
+      gameBus.emit("bust-resolve", "quarter");
+      return;
+    }
+    gameBus.emit("banner", result === "skipped" ? "AD CLOSED" : "NO AD");
+    gameBus.emit("bust-resolve", "half");
+  };
+
   return (
     <main className="relative h-dvh w-full overflow-hidden bg-[#0e0f12]">
       <GameCanvas onReady={setReady} />
@@ -555,7 +585,11 @@ export default function RunoutApp() {
           onOpenPlayer={(id) => void openPlayer(id)}
         />
       )}
-      {screen === "play" && <ShopButton onReward={(rewardId) => void grantReward(rewardId, playerId())} />}
+      {screen === "play" && (
+        <ShopButton
+          onReward={async (reward, report) => grantAfterAd(reward, playerId(), report)}
+        />
+      )}
       {screen === "play" && mode === "multi" && session && (
         <IslandActions
           session={session}
@@ -570,6 +604,17 @@ export default function RunoutApp() {
           worth={offer.worth}
           onBuy={() => void sessionAction("island", offer.id)}
           onClose={() => setOffer(null)}
+        />
+      )}
+      {bust && (
+        <BustOffer
+          cash={bust.cash}
+          loseHalf={bust.loseHalf}
+          loseQuarter={bust.loseQuarter}
+          busy={bustBusy}
+          note={bustNote}
+          onWatch={() => void softenBust()}
+          onTake={() => gameBus.emit("bust-resolve", "half")}
         />
       )}
       {screen === "play" && stocks && (
@@ -599,12 +644,30 @@ function readBlob(playerId: string): CityProfile | null {
   }
 }
 
-async function grantReward(rewardId: string, id: string): Promise<void> {
+async function grantAfterAd(
+  reward: ShopReward,
+  id: string,
+  report: (index: number, total: number) => void,
+): Promise<boolean> {
+  const result = await watchAds(reward.ads, {
+    onStart: () => gameBus.emit("ad-hold", true),
+    onEnd: () => gameBus.emit("ad-hold", false),
+    onProgress: report,
+  });
+  if (result !== "viewed") return false;
+  return grantReward(reward.id, id);
+}
+
+async function grantReward(rewardId: string, id: string): Promise<boolean> {
   const response = await fetch("/api/shop", {
     method: "POST",
     headers: playerHeaders(id),
     body: JSON.stringify({ rewardId }),
   });
-  const data = (await response.json()) as { reward?: { multiplier: number; ms: number; cash: number } };
-  if (data.reward) gameBus.emit("reward", data.reward);
+  const data = (await response.json()) as {
+    reward?: { id: string; name: string; ms: number; cash: number; earnings: number; speed: number; energy: number; gas: number };
+  };
+  if (!data.reward) return false;
+  gameBus.emit("reward", data.reward);
+  return true;
 }

@@ -67,7 +67,7 @@ export class Vehicle extends Phaser.Physics.Arcade.Sprite {
     this.setPushable(false);
   }
 
-  drive(input: MoveInput, delta: number): void {
+  drive(input: MoveInput, delta: number, speedScale = 1, gasScale = 1): void {
     if (!this.occupied) return;
     const dt = delta / 1000;
     const body = this.body as Phaser.Physics.Arcade.Body;
@@ -81,19 +81,20 @@ export class Vehicle extends Phaser.Physics.Arcade.Sprite {
     }
 
     const dry = this.gas <= 0;
-    const accel = this.kind === "boat" ? 280 : 640;
-    if (!dry && input.up) this.speed = Math.min(this.maxSpeed, this.speed + accel * dt);
-    if (!dry && input.down) this.speed = Math.max(-this.maxSpeed * 0.42, this.speed - accel * 0.7 * dt);
+    const cap = this.maxSpeed * speedScale;
+    const accel = (this.kind === "boat" ? 280 : 640) * speedScale;
+    if (!dry && input.up) this.speed = Math.min(cap, this.speed + accel * dt);
+    if (!dry && input.down) this.speed = Math.max(-cap * 0.42, this.speed - accel * 0.7 * dt);
     if (dry || !throttle) {
       this.speed *= Math.exp(-2.2 * dt);
       if (Math.abs(this.speed) < 6) this.speed = 0;
     }
-    const pace = Math.min(1, Math.abs(this.speed) / this.maxSpeed);
-    if (!dry && pace > 0.04) this.gas = Math.max(0, this.gas - TUNING.gasBurn * pace * dt);
+    const pace = Math.min(1, Math.abs(this.speed) / cap);
+    if (!dry && pace > 0.04) this.gas = Math.max(0, this.gas - TUNING.gasBurn * gasScale * pace * dt);
 
     const turn = (input.right ? 1 : 0) - (input.left ? 1 : 0);
     if (turn !== 0) {
-      const pace = Math.min(1, Math.abs(this.speed) / (this.maxSpeed * 0.45));
+      const pace = Math.min(1, Math.abs(this.speed) / (cap * 0.45));
       const aim = Math.abs(this.speed) < 36 ? 1.05 : 0;
       const rate = (this.kind === "boat" ? 1.25 : 2.05) * (0.25 + pace) + aim;
       const gear = this.speed < -8 ? -1 : 1;

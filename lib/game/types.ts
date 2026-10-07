@@ -117,7 +117,19 @@ export type GameEventMap = {
   "grocery-close": undefined;
   escape: number | null;
   menu: undefined;
-  reward: { multiplier: number; ms: number; cash: number };
+  reward: {
+    id: string;
+    name: string;
+    ms: number;
+    cash: number;
+    earnings: number;
+    speed: number;
+    energy: number;
+    gas: number;
+  };
+  "ad-hold": boolean;
+  "bust-offer": { cash: number; loseHalf: number; loseQuarter: number };
+  "bust-resolve": "half" | "quarter";
   session: SessionView;
   "spawn-boat": undefined;
   "island-offer": { id: string; username: string; worth: string } | null;

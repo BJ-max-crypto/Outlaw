@@ -265,6 +265,7 @@ export function syncReported(account: Account, report: Report, now = Date.now())
   }
   if (!data.syncedAt) {
     migrate(account, report, now);
+    account.stakeCredit = 0;
     data.lastSeen = now;
     return;
   }

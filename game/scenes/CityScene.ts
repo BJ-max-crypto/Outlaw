@@ -78,9 +78,16 @@ export class CityScene extends Phaser.Scene {
   private offGroceryClose: (() => void) | null = null;
   private offSession: (() => void) | null = null;
   private offReward: (() => void) | null = null;
+  private offHold: (() => void) | null = null;
+  private offBust: (() => void) | null = null;
   private offBoat: (() => void) | null = null;
   private hasBoat = false;
   private rewardUntil = 0;
+  private speedUntil = 0;
+  private energyUntil = 0;
+  private gasUntil = 0;
+  private hold = 0;
+  private bustPending = false;
   private offeredIsland: number | null = null;
   private homeSpot = { x: 0, y: 0 };
   private onWheel?: (event: WheelEvent) => void;
@@ -158,6 +165,11 @@ export class CityScene extends Phaser.Scene {
     this.lastPinch = 0;
     this.hasBoat = false;
     this.rewardUntil = 0;
+    this.speedUntil = 0;
+    this.energyUntil = 0;
+    this.gasUntil = 0;
+    this.hold = 0;
+    this.bustPending = false;
     this.offeredIsland = null;
     this.homeSpot = { x: this.map.playerSpawn.x, y: this.map.playerSpawn.y };
     this.siren = new Siren();
@@ -221,6 +233,11 @@ export class CityScene extends Phaser.Scene {
     });
     this.offSession = gameBus.on("session", (session) => this.applySession(session));
     this.offReward = gameBus.on("reward", (reward) => this.applyReward(reward));
+    this.offHold = gameBus.on("ad-hold", (held) => {
+      this.hold += held ? 1 : -1;
+      if (this.hold < 0) this.hold = 0;
+    });
+    this.offBust = gameBus.on("bust-resolve", (choice) => this.resolveBust(choice));
     this.offBoat = gameBus.on("spawn-boat", () => {
       this.hasBoat = true;
       this.spawnYacht();
@@ -240,6 +257,8 @@ export class CityScene extends Phaser.Scene {
       this.offGroceryClose?.();
       this.offSession?.();
       this.offReward?.();
+      this.offHold?.();
+      this.offBust?.();
       this.offBoat?.();
       if (this.onWheel) this.game.canvas.removeEventListener("wheel", this.onWheel);
       if (this.onKeyDown) window.removeEventListener("keydown", this.onKeyDown);
@@ -291,12 +310,14 @@ export class CityScene extends Phaser.Scene {
   }
 
   update(_time: number, delta: number): void {
-    if (!this.live) return;
+    if (!this.live || this.hold > 0) return;
     if (this.rideLock > 0) this.rideLock -= delta;
 
     const input = this.readInput();
+    const speedBoost = this.speedUntil > this.time.now ? 2 : 1;
+    const gasScale = this.gasUntil > this.time.now ? 0.5 : 1;
     if (this.riding) {
-      this.riding.drive(input, delta);
+      this.riding.drive(input, delta, speedBoost, gasScale);
       if (this.riding.gas <= 0 && !this.gasEmpty) {
         this.gasEmpty = true;
         this.flash("OUT OF GAS");
@@ -309,7 +330,7 @@ export class CityScene extends Phaser.Scene {
       this.footWalls.active = true;
       this.playerRides.active = true;
       const sprint = this.keys.shift.isDown && this.state.energy > 12;
-      const scale = this.state.energy < 12 ? 0.6 : sprint ? 1.3 : 1;
+      const scale = (this.state.energy < 12 ? 0.6 : sprint ? 1.3 : 1) * speedBoost;
       this.player.update(input, delta, scale);
     }
 
@@ -510,13 +531,29 @@ export class CityScene extends Phaser.Scene {
     this.state.islandPay = heldIncome(islands, playerId);
   }
 
-  private applyReward(reward: { multiplier: number; ms: number; cash: number }): void {
-    this.state.earningsScale = reward.multiplier > 0 ? reward.multiplier : 1;
-    this.rewardUntil = reward.ms > 0 ? this.time.now + reward.ms : 0;
+  private applyReward(reward: {
+    id: string;
+    name: string;
+    ms: number;
+    cash: number;
+    earnings: number;
+    speed: number;
+    energy: number;
+    gas: number;
+  }): void {
+    const now = this.time.now;
+    if (reward.earnings > 1 && reward.ms > 0) {
+      this.state.earningsScale = reward.earnings;
+      this.rewardUntil = now + reward.ms;
+    }
+    if (reward.speed > 1 && reward.ms > 0) this.speedUntil = now + reward.ms;
+    if (reward.energy > 0 && reward.energy < 1 && reward.ms > 0) this.energyUntil = now + reward.ms;
+    if (reward.gas > 0 && reward.gas < 1 && reward.ms > 0) this.gasUntil = now + reward.ms;
     if (reward.cash > 0) {
       this.state.cash += reward.cash;
       this.popup(this.player.x, this.player.y - 36, `+$${reward.cash}`, "#d7c08a");
     }
+    if (reward.ms > 0) this.flash(reward.name);
     this.pushHud();
   }
 
@@ -660,7 +697,8 @@ export class CityScene extends Phaser.Scene {
       rate = sprint ? TUNING.energySprint : TUNING.energyWalk;
     }
     if (rate <= 0) return;
-    this.state.energy = Math.max(0, this.state.energy - rate * (delta / 1000));
+    const ease = this.energyUntil > this.time.now ? 0.5 : 1;
+    this.state.energy = Math.max(0, this.state.energy - rate * ease * (delta / 1000));
   }
 
   private decayWanted(delta: number): void {
@@ -1075,7 +1113,7 @@ export class CityScene extends Phaser.Scene {
   }
 
   private bust(): void {
-    const lost = this.state.cutInHalf();
+    if (this.bustPending) return;
     const ride = this.riding;
     if (ride) {
       const stolen = ride.stolen;
@@ -1097,7 +1135,24 @@ export class CityScene extends Phaser.Scene {
     this.publishEscape(true);
     this.recoverUntil = this.time.now + TUNING.bustSafetyMs;
     this.cameras.main.flash(200, 160, 36, 36);
-    this.flash(`BUSTED — LOST $${lost}`);
+    this.bustPending = true;
+    this.live = false;
+    const cash = this.state.cash;
+    gameBus.emit("bust-offer", {
+      cash,
+      loseHalf: cash - Math.floor(cash * 0.5),
+      loseQuarter: Math.floor(cash * 0.25),
+    });
+    this.flash("BUSTED");
+    this.pushHud();
+  }
+
+  private resolveBust(choice: "half" | "quarter"): void {
+    if (!this.bustPending) return;
+    this.bustPending = false;
+    const lost = choice === "quarter" ? this.state.cutQuarter() : this.state.cutInHalf();
+    this.live = true;
+    this.flash(choice === "quarter" ? `AD — LOST $${lost}` : `BUSTED — LOST $${lost}`);
     this.pushHud();
   }
 
@@ -1274,7 +1329,7 @@ export class CityScene extends Phaser.Scene {
   }
 
   private hint(): string {
-    if (this.state.wanted > 0) return "Last a minute and a half and the cops break off. A bust cuts your cash in half.";
+    if (this.state.wanted > 0) return "Last a minute and a half and the cops break off. A bust takes half your cash, or a quarter if you watch an ad.";
     if (this.inJob() && this.state.employed) return "Shift pay is on while you stay at the port.";
     if (this.state.employed) return "Walk back into the port to pick the wage up again.";
     return "Drive or steal a ride, clock in at the port, or invest on the stock floor.";

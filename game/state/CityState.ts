@@ -48,6 +48,13 @@ export class CityState {
     return lost;
   }
 
+  /** A finished bust ad keeps three quarters by taking 25 percent, rounded down. */
+  cutQuarter(): number {
+    const lost = Math.floor(this.cash * 0.25);
+    this.cash -= lost;
+    return lost;
+  }
+
   owns(id: string): boolean {
     return this.ownedBusinesses.has(id);
   }

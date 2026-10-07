@@ -2,7 +2,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { heldIncome, islandIncome, type IslandCard } from "@/game/mode/match";
 import { TUNING } from "@/game/tuning";
 import type { EconomyData } from "@/lib/economy/model";
-import { rewardById } from "@/lib/shop/rewards";
+import { rewardById, type ShopReward } from "@/lib/shop/rewards";
 
 export type Account = {
   id: string;
@@ -317,13 +317,24 @@ export function leading(session: SessionState, id: string): boolean {
   return ownsAll && richest;
 }
 
-export function claimReward(id: string, rewardId: string): { rewardId: string; multiplier: number; ms: number; cash: number } | null {
+export async function claimReward(id: string, rewardId: string): Promise<ShopReward | null> {
   const reward = rewardById(rewardId);
   if (!reward) return null;
-  const account = getAccount(id);
+  let account = getAccount(id) ?? (await loadAccount(id));
+  if (!account && (reward.cash > 0 || reward.earnings > 1)) {
+    account = saveAccount({
+      id,
+      username: "",
+      cash: TUNING.startingCash,
+      energy: 100,
+      employed: false,
+      businesses: [],
+      vehicles: [],
+    });
+  }
   if (account) {
-    if (reward.multiplier > 1 && reward.ms > 0) {
-      account.rewardScale = reward.multiplier;
+    if (reward.earnings > 1 && reward.ms > 0) {
+      account.rewardScale = reward.earnings;
       account.rewardUntil = Date.now() + reward.ms;
     }
     if (reward.cash > 0) account.stakeCredit = (account.stakeCredit ?? 0) + reward.cash;
@@ -332,7 +343,7 @@ export function claimReward(id: string, rewardId: string): { rewardId: string; m
   if (db) {
     void db.from("shop_claims").insert({ player_id: id, reward_id: reward.id });
   }
-  return { rewardId: reward.id, multiplier: reward.multiplier, ms: reward.ms, cash: reward.cash };
+  return reward;
 }
 
 /** Extra cash per minute from islands and reinforcements this player holds in a live session. */
