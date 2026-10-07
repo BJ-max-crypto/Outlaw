@@ -33,7 +33,7 @@ The game opens on a dashboard. Choose a username (2–16 characters), then **Sin
 
 Singleplayer is the island on its own. There is no yacht. Progress is kept in the browser and posted to `/api/profile`.
 
-Cash, businesses, stocks, and collectibles add up to a net worth on the cash card. The same four buildings can be bought and upgraded through three levels. Each level doubles that building's income, and the income keeps accruing for up to eight hours while you are away. The stock desk shows what the portfolio is worth, what you paid, and the return. Prices move on the server. Daily goals, achievements, and ranks open from the cash card. A world event banner sits under the timer and can be hidden. None of this moves the island, the buildings, or the camera.
+Cash, businesses, stocks, and collectibles add up to a net worth on the cash card. The same four buildings can be bought and upgraded through three levels. Each level doubles that building's income, and the income keeps accruing for up to eight hours while you are away. The stock desk shows what the portfolio is worth, what you paid, and the return. Each price is a random number for that clock slot, shared by every player, and it does not follow island events or whether you are playing. Daily goals, achievements, and ranks open from the cash card. A world event banner sits under the timer and can be hidden. None of this moves the island, the buildings, or the camera.
 
 Job pay still stops the moment you leave the port. Business income does not. Buying a business, upgrading it, trading shares, claiming a goal, and unlocking an achievement are checked on the server. A client cannot post an arbitrary cash balance after the first save.
 

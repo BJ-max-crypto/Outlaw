@@ -76,8 +76,8 @@ export const OBJECTIVE_POOL: ObjectiveTemplate[] = [
 export type WorldEvent = { id: string; name: string; detail: string; claimable: boolean };
 
 const EVENTS: WorldEvent[] = [
-  { id: "boom", name: "MARKET BOOM", detail: "Stock prices are drifting up.", claimable: false },
-  { id: "crash", name: "MARKET CRASH", detail: "Stock prices are drifting down.", claimable: false },
+  { id: "boom", name: "MARKET BOOM", detail: "The island is busy. Stock prices keep their own random pace.", claimable: false },
+  { id: "crash", name: "MARKET CRASH", detail: "The island is quiet. Stock prices keep their own random pace.", claimable: false },
   { id: "shipment", name: "PORT SHIPMENT", detail: "Claim a payout at the port.", claimable: true },
   { id: "refund", name: "TAX REFUND", detail: "A cash refund is waiting.", claimable: true },
   { id: "rush", name: "BUSINESS BOOM", detail: "Owned businesses pay double for now.", claimable: false },
@@ -172,6 +172,44 @@ export function itemById(id: string): Collectible | undefined {
 
 export function stockVolatility(id: string): number {
   return VOLATILITY[id] ?? 0.04;
+}
+
+const QUOTE_TICK_MS = 3000;
+const QUOTE_HISTORY = 28;
+
+function quoteSalt(id: string): number {
+  let n = 2166136261;
+  for (let i = 0; i < id.length; i += 1) {
+    n ^= id.charCodeAt(i);
+    n = Math.imul(n, 16777619);
+  }
+  return n >>> 0;
+}
+
+/** Stable 0–1 value for one stock at one clock tick. */
+function quoteUnit(tick: number, id: string): number {
+  let x = (Math.imul(tick, 100003) + quoteSalt(id)) >>> 0;
+  x = Math.imul(x ^ (x >>> 16), 0x7feb352d);
+  x = Math.imul(x ^ (x >>> 15), 0x846ca68b);
+  x = (x ^ (x >>> 16)) >>> 0;
+  return x / 4294967296;
+}
+
+/**
+ * Price for one 3-second slot. It depends only on the clock and the stock,
+ * not on events, earnings, or whether anyone is playing.
+ */
+export function marketQuotes(now = Date.now()): QuoteState[] {
+  const tick = Math.floor(now / QUOTE_TICK_MS);
+  return STOCKS.map((stock) => {
+    const history: number[] = [];
+    for (let age = QUOTE_HISTORY - 1; age >= 0; age -= 1) {
+      const swing = (quoteUnit(tick - age, stock.id) - 0.5) * 2;
+      const raw = stock.price * (1 + swing * stockVolatility(stock.id) * 4);
+      history.push(Math.round(Math.min(400, Math.max(8, raw))));
+    }
+    return { id: stock.id, name: stock.name, price: history[history.length - 1], history };
+  });
 }
 
 export function currentEvent(now: number): WorldEvent & { endsIn: number } {

@@ -24,7 +24,7 @@ import {
   rewardScaleFor,
   ROBBERY_GAP_MS,
   ROBBERY_GRANT,
-  stockVolatility,
+  marketQuotes,
   upgradeCost,
   type EconomyData,
   type EconomyView,
@@ -48,45 +48,26 @@ type Report = {
   username?: string;
 };
 
-const market = globalThis as typeof globalThis & {
-  __runoutMarket?: { quotes: QuoteState[]; steppedAt: number };
-};
-market.__runoutMarket ??= {
-  quotes: STOCKS.map((stock) => ({
-    id: stock.id,
-    name: stock.name,
-    price: stock.price,
-    history: [stock.price],
-  })),
-  steppedAt: Date.now(),
-};
-const quotes = market.__runoutMarket.quotes;
-
-function steppedAt(): number {
-  return market.__runoutMarket!.steppedAt;
-}
-
-function setSteppedAt(now: number): void {
-  market.__runoutMarket!.steppedAt = now;
-}
+const quotes: QuoteState[] = STOCKS.map((stock) => ({
+  id: stock.id,
+  name: stock.name,
+  price: stock.price,
+  history: [stock.price],
+}));
 
 function prices(): Record<string, number> {
   return Object.fromEntries(quotes.map((quote) => [quote.id, quote.price]));
 }
 
+/** Copy the clock-based quotes into the trade book. Same prices for every player. */
 export function stepMarket(now = Date.now()): QuoteState[] {
-  const event = currentEvent(now);
-  const drift = event.id === "boom" ? 0.025 : event.id === "crash" ? -0.025 : 0;
-  const steps = Math.min(20, Math.floor((now - steppedAt()) / 3000));
-  for (let i = 0; i < steps; i += 1) {
-    for (const quote of quotes) {
-      const swing = (Math.random() - 0.5) * stockVolatility(quote.id) * 2;
-      quote.price = Math.round(Math.min(400, Math.max(8, quote.price * (1 + drift + swing))));
-      quote.history.push(quote.price);
-      if (quote.history.length > 28) quote.history.shift();
-    }
+  const next = marketQuotes(now);
+  for (const quote of quotes) {
+    const row = next.find((item) => item.id === quote.id);
+    if (!row) continue;
+    quote.price = row.price;
+    quote.history = row.history.slice();
   }
-  if (steps > 0) setSteppedAt(now);
   return quotes.map((quote) => ({ ...quote, history: quote.history.slice() }));
 }
 
@@ -353,6 +334,7 @@ export async function postEconomy(
 ): Promise<{ view: EconomyView; error?: string }> {
   const account = await accountFor(id, body.username ?? "");
   const now = Date.now();
+  stepMarket(now);
   syncReported(account, body, now);
   const action = body.action ?? "sync";
   const fail = (message: string) => ({ error: message, view: present(account, now) });

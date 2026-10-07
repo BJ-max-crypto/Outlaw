@@ -10,14 +10,14 @@ import { rectContains } from "@/game/map/geometry";
 import { MAP_SCALE, isWaterWorld, landIslandIndex, setIslandOrigins } from "@/game/map/waterMask";
 import { getMatch, heldIncome, islandIncome, islandOrigin, ISLAND_SPAN, orderIslands, setMatch, takePendingProfile } from "@/game/mode/match";
 import type { EconomyView } from "@/lib/economy/model";
-import { businessPerMinute } from "@/lib/economy/model";
+import { businessPerMinute, marketQuotes } from "@/lib/economy/model";
 import { formatCash } from "@/lib/game/format";
 import { CityState } from "@/game/state/CityState";
 import { PoliceDirector } from "@/game/systems/PoliceDirector";
 import { RobberySystem } from "@/game/systems/RobberySystem";
 import { WantedSystem } from "@/game/systems/WantedSystem";
 import { TUNING } from "@/game/tuning";
-import { businessById, FOODS, seedQuotes, type FoodItem, type MarketQuote } from "@/game/world/catalog";
+import { businessById, FOODS, type FoodItem, type MarketQuote } from "@/game/world/catalog";
 
 const ZOOM_MIN = 0.55;
 const ZOOM_MAX = 2.5;
@@ -61,7 +61,7 @@ export class CityScene extends Phaser.Scene {
   private robReadyAt = new Map<string, number>();
   private peers = new Map<string, { sprite: Phaser.GameObjects.Sprite; label: Phaser.GameObjects.Text }>();
   private feet = new WeakMap<object, { x: number; y: number }>();
-  private quotes: MarketQuote[] = seedQuotes();
+  private quotes: MarketQuote[] = marketQuotes();
   private stockOpen = false;
   private groceryOpen = false;
   private groceryDismissed = false;
@@ -144,7 +144,7 @@ export class CityScene extends Phaser.Scene {
     this.robReadyAt.clear();
     this.peers.clear();
     this.feet = new WeakMap();
-    this.quotes = seedQuotes();
+    this.quotes = marketQuotes();
     this.stockOpen = false;
     this.groceryOpen = false;
     this.groceryDismissed = false;
@@ -327,7 +327,7 @@ export class CityScene extends Phaser.Scene {
     this.wasOnShift = onShift;
     const pay = this.state.tickIncome(delta, onShift);
     if (pay > 0) this.popup(this.player.x, this.player.y - 36, `+$${pay}`, "#d7c08a");
-    this.tickMarket(delta);
+    this.tickMarket();
     if (this.stockOpen && !this.inStock()) this.closeStocks();
 
     if (this.escapeMs <= 0) this.decayWanted(delta);
@@ -1020,19 +1020,16 @@ export class CityScene extends Phaser.Scene {
     gameBus.emit("owned-spot", owned && spot ? { id: spot.id, name: spot.name } : null);
   }
 
-  private tickMarket(delta: number): void {
-    this.marketMs += delta;
-    if (this.marketMs < 3000) return;
-    this.marketMs = 0;
-    if (this.serverMarket) {
-      if (this.stockOpen) this.emitStocks();
-      return;
-    }
+  private tickMarket(): void {
+    const now = Date.now();
+    if (this.marketMs !== 0 && now - this.marketMs < 3000) return;
+    this.marketMs = now;
+    const next = marketQuotes(now);
     for (const quote of this.quotes) {
-      const next = quote.price * (1 + (Math.random() - 0.5) * 0.12);
-      quote.price = Math.round(Math.min(400, Math.max(8, next)));
-      quote.history.push(quote.price);
-      if (quote.history.length > 28) quote.history.shift();
+      const row = next.find((item) => item.id === quote.id);
+      if (!row) continue;
+      quote.price = row.price;
+      quote.history = row.history.slice();
     }
     if (this.stockOpen) this.emitStocks();
   }
