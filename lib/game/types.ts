@@ -66,6 +66,7 @@ export type StockBook = {
 export type StockOrder = {
   id: string;
   side: "buy" | "sell";
+  quantity: number;
 };
 
 export type GroceryItem = {

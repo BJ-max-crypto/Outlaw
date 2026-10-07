@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { formatCash } from "@/lib/game/format";
 import type { StockBook, StockOrder, StockQuote } from "@/lib/game/types";
 
@@ -38,26 +39,47 @@ export default function StockDesk({ book, onOrder, onClose }: StockDeskProps) {
               </p>
             </div>
             <StockChart history={quote.history} />
-            <div className="mt-2 flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => onOrder({ id: quote.id, side: "buy" })}
-                className="rounded-full bg-[#e25b2a] px-3 py-1.5 text-[11px] font-semibold tracking-[0.14em] text-[#1a0d08]"
-              >
-                BUY
-              </button>
-              <button
-                type="button"
-                onClick={() => onOrder({ id: quote.id, side: "sell" })}
-                disabled={quote.shares <= 0}
-                className="rounded-full border border-white/15 px-3 py-1.5 text-[11px] font-semibold tracking-[0.14em] text-[#f4f1ea] disabled:opacity-40"
-              >
-                SELL
-              </button>
-            </div>
+            <QuoteOrder quote={quote} cash={book.cash} onOrder={onOrder} />
           </li>
         ))}
       </ul>
+    </div>
+  );
+}
+
+function QuoteOrder({ quote, cash, onOrder }: { quote: StockQuote; cash: number; onOrder: (order: StockOrder) => void }) {
+  const [amount, setAmount] = useState("1");
+  const quantity = Math.min(9999, Math.max(0, Math.floor(Number(amount) || 0)));
+  const cost = quote.price * quantity;
+  const selling = Math.min(quantity, quote.shares);
+  return (
+    <div className="mt-2 flex items-center justify-end gap-2">
+      <label className="sr-only" htmlFor={`shares-${quote.id}`}>
+        How many {quote.name} shares
+      </label>
+      <input
+        id={`shares-${quote.id}`}
+        inputMode="numeric"
+        value={amount}
+        onChange={(event) => setAmount(event.target.value.replace(/\D/g, "").slice(0, 4))}
+        className="w-16 rounded-full border border-white/15 bg-black/40 px-3 py-1.5 text-center text-xs tracking-[0.08em] text-[#f4f1ea] outline-none"
+      />
+      <button
+        type="button"
+        onClick={() => onOrder({ id: quote.id, side: "buy", quantity })}
+        disabled={quantity < 1 || cash < cost}
+        className="rounded-full bg-[#e25b2a] px-3 py-1.5 text-[11px] font-semibold tracking-[0.14em] text-[#1a0d08] disabled:opacity-40"
+      >
+        BUY {quantity > 0 ? formatCash(cost) : ""}
+      </button>
+      <button
+        type="button"
+        onClick={() => onOrder({ id: quote.id, side: "sell", quantity: selling })}
+        disabled={selling < 1}
+        className="rounded-full border border-white/15 px-3 py-1.5 text-[11px] font-semibold tracking-[0.14em] text-[#f4f1ea] disabled:opacity-40"
+      >
+        SELL {selling > 0 ? formatCash(quote.price * selling) : ""}
+      </button>
     </div>
   );
 }

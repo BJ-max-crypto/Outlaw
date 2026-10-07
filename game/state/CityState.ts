@@ -54,16 +54,21 @@ export class CityState {
     return this.shares.get(id) ?? 0;
   }
 
-  addShare(id: string): void {
-    this.shares.set(id, this.sharesOf(id) + 1);
+  addShares(id: string, count: number): void {
+    const next = Math.floor(count);
+    if (next <= 0) return;
+    this.shares.set(id, this.sharesOf(id) + next);
   }
 
-  takeShare(id: string): boolean {
-    const count = this.sharesOf(id);
-    if (count <= 0) return false;
-    if (count === 1) this.shares.delete(id);
-    else this.shares.set(id, count - 1);
-    return true;
+  /** Removes up to `count` shares and returns how many were sold. */
+  takeShares(id: string, count: number): number {
+    const owned = this.sharesOf(id);
+    const sold = Math.min(owned, Math.floor(count));
+    if (sold <= 0) return 0;
+    const left = owned - sold;
+    if (left === 0) this.shares.delete(id);
+    else this.shares.set(id, left);
+    return sold;
   }
 
   /** Wages pay only while you are standing in the job. Business income has its own timer. */

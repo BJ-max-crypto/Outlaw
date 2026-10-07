@@ -946,17 +946,23 @@ export class CityScene extends Phaser.Scene {
     if (!this.stockOpen) return;
     const quote = this.quotes.find((item) => item.id === order.id);
     if (!quote) return;
+    const quantity = Math.min(9999, Math.max(1, Math.floor(order.quantity) || 1));
     if (order.side === "buy") {
-      if (!this.state.spend(quote.price)) {
+      const cost = quote.price * quantity;
+      if (!this.state.spend(cost)) {
         this.popup(this.player.x, this.player.y - 28, "NEED CASH", "#f4f1ea");
         this.emitStocks();
         return;
       }
-      this.state.addShare(quote.id);
-      this.popup(this.player.x, this.player.y - 28, quote.name, "#d7c08a");
-    } else if (this.state.takeShare(quote.id)) {
-      this.state.cash += quote.price;
-      this.popup(this.player.x, this.player.y - 28, `+$${quote.price}`, "#7dcea0");
+      this.state.addShares(quote.id, quantity);
+      this.popup(this.player.x, this.player.y - 28, `${quantity} ${quote.name}`, "#d7c08a");
+    } else {
+      const sold = this.state.takeShares(quote.id, quantity);
+      if (sold > 0) {
+        const gain = quote.price * sold;
+        this.state.cash += gain;
+        this.popup(this.player.x, this.player.y - 28, `+$${gain}`, "#7dcea0");
+      }
     }
     this.emitStocks();
     this.pushHud();

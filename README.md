@@ -1,6 +1,6 @@
 # Runout
 
-An open island you can keep playing. Drive or steal a car, take a boat from the dock, and clock in at the port. The wage pays only while you stay there. Each stock on the desk has its own chart. When the cops come, survive for a minute and a half and they break off. Getting arrested cuts your cash in half. There are no rounds.
+An open island you can keep playing. Drive or steal a car, take a boat from the dock, and clock in at the port. The wage pays only while you stay there. Each stock on the desk has its own chart, and you type how many shares to buy or sell. When the cops come, survive for a minute and a half and they break off. Getting arrested cuts your cash in half. There are no rounds.
 
 ## Run
 
