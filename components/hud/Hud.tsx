@@ -42,6 +42,9 @@ export default function Hud({ hud, prompt, robbery, banner, escapeMs, map, pos, 
         <p key={hud.cash} className="pop font-display mt-1 text-5xl leading-none text-[#d7c08a]">
           {formatCash(hud.cash)}
         </p>
+        {hud.driving && (
+          <Meter label="GAS" value={Math.max(0, Math.min(100, (hud.gas / hud.maxGas) * 100))} color={hud.gas / hud.maxGas < 0.2 ? "#e25b2a" : "#e2b34a"} />
+        )}
         <Meter label="HEALTH" value={healthPct} color="#e25b2a" />
         <Meter label="ENERGY" value={energyPct} color="#7dcea0" />
         <p className="mt-4 text-[10px] font-medium tracking-[0.28em] text-[#a39e94]">WANTED</p>

@@ -15,8 +15,9 @@ Open [http://localhost:3000](http://localhost:3000).
 
 - **WASD** or arrow keys to move. The same keys steer a car or boat.
 - **Shift** to sprint. Sprinting spends energy, and low energy slows you down.
-- **E** to drive a vehicle, clock in at the port, buy a business, or open the stock desk.
-- **F** to steal a vehicle without getting in, or to get out. A car stays still until you release the keys and accelerate.
+- **E** buys a car, drives one you already own, clock in at the port, buy a business, or open the stock desk. While driving, **E** pays to fill the tank.
+- **F** steals a car. Buying or stealing drops it on the road just outside the dealership and puts you in the seat. A car stays still until you release the keys and accelerate. **F** gets you out.
+- Driving burns gas. The gas bar shows what is left. An empty tank coasts to a stop until you pay to refill.
 - Every road is open. Only the building walls block you, and each door faces the road.
 - After you clock in, shift pay continues anywhere on the island.
 - A chase lasts 90 seconds. The timer at the top is how long until the cops quit.

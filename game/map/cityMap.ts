@@ -13,6 +13,7 @@ export type PlacedRide = {
   heading: number;
   name: string;
   speed: number;
+  price: number;
 };
 
 export type PlacedBusiness = BusinessDef & { zone: Rect };
@@ -30,6 +31,7 @@ export type CityMap = {
   rides: PlacedRide[];
   playerSpawn: { x: number; y: number };
   bustSpawn: { x: number; y: number };
+  carCurb: { x: number; y: number };
   policeSpawns: { x: number; y: number }[];
   markers: MapMarker[];
 };
@@ -91,17 +93,18 @@ export function buildCityMap(): CityMap {
     pierZone: zone(1024, 432, 100, 28),
     dockZones: [zone(880, 270, 160, 190), zone(980, 418, 170, 52)],
     rides: [
-      { id: "white", kind: "car", texture: "car-white", ...at(310, 610), heading: 0, name: "SEDAN", speed: 430 },
-      { id: "red", kind: "car", texture: "car-red", ...at(360, 610), heading: 0, name: "STRIPE", speed: 470 },
-      { id: "blue", kind: "car", texture: "car-blue", ...at(380, 700), heading: 0, name: "COUPE", speed: 500 },
-      { id: "olive", kind: "car", texture: "car-olive", ...at(295, 700), heading: 0, name: "SUV", speed: 400 },
-      { id: "yellow", kind: "car", texture: "car-yellow", ...at(345, 700), heading: 0, name: "RACER", speed: 540 },
-      { id: "skiff", kind: "boat", texture: "boat-white", ...at(1024, 392), heading: 0, name: "SKIFF", speed: 280 },
-      { id: "launch", kind: "boat", texture: "boat-wood", ...at(1184, 448), heading: 0.4, name: "LAUNCH", speed: 300 },
-      { id: "rib", kind: "boat", texture: "boat-black", ...at(1076, 304), heading: -0.2, name: "RIB", speed: 320 },
-      { id: "yacht", kind: "boat", texture: "boat-deck", ...at(1032, 352), heading: 0.15, name: "YACHT", speed: 290 },
+      { id: "white", kind: "car", texture: "car-white", ...at(310, 610), heading: 0, name: "SEDAN", speed: 430, price: 160 },
+      { id: "red", kind: "car", texture: "car-red", ...at(360, 610), heading: 0, name: "STRIPE", speed: 470, price: 220 },
+      { id: "blue", kind: "car", texture: "car-blue", ...at(380, 700), heading: 0, name: "COUPE", speed: 500, price: 280 },
+      { id: "olive", kind: "car", texture: "car-olive", ...at(295, 700), heading: 0, name: "SUV", speed: 400, price: 190 },
+      { id: "yellow", kind: "car", texture: "car-yellow", ...at(345, 700), heading: 0, name: "RACER", speed: 540, price: 340 },
+      { id: "skiff", kind: "boat", texture: "boat-white", ...at(1024, 392), heading: 0, name: "SKIFF", speed: 280, price: 0 },
+      { id: "launch", kind: "boat", texture: "boat-wood", ...at(1184, 448), heading: 0.4, name: "LAUNCH", speed: 300, price: 0 },
+      { id: "rib", kind: "boat", texture: "boat-black", ...at(1076, 304), heading: -0.2, name: "RIB", speed: 320, price: 0 },
+      { id: "yacht", kind: "boat", texture: "boat-deck", ...at(1032, 352), heading: 0.15, name: "YACHT", speed: 290, price: 0 },
     ],
     playerSpawn: at(500, 440),
+    carCurb: at(336, 805),
     bustSpawn: at(500, 480),
     policeSpawns: [at(470, 400), at(470, 520), at(700, 480), at(500, 780), at(780, 500), at(750, 360)],
     markers: [

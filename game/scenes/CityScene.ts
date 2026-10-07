@@ -46,6 +46,7 @@ export class CityScene extends Phaser.Scene {
   private lastHudKey = "";
   private lastProgress = -1;
   private lastPrompt: string | null = null;
+  private gasEmpty = false;
   private bannerToken = 0;
   private robReadyAt = new Map<string, number>();
   private peers = new Map<string, { sprite: Phaser.GameObjects.Sprite; label: Phaser.GameObjects.Text }>();
@@ -211,6 +212,11 @@ export class CityScene extends Phaser.Scene {
     const input = this.readInput();
     if (this.riding) {
       this.riding.drive(input, delta);
+      if (this.riding.gas <= 0 && !this.gasEmpty) {
+        this.gasEmpty = true;
+        this.flash("OUT OF GAS");
+      }
+      if (this.riding.gas > 0) this.gasEmpty = false;
       this.player.setPosition(this.riding.x, this.riding.y);
       this.footWalls.active = false;
       this.playerRides.active = false;
@@ -420,6 +426,7 @@ export class CityScene extends Phaser.Scene {
     if (just(this.keys.m)) gameBus.emit("map-toggle");
     if (just(this.keys.g)) this.eatFood();
     if (this.riding) {
+      if (just(this.keys.e)) this.refill();
       if (just(this.keys.f) && this.rideLock <= 0) this.dismount();
       return;
     }
@@ -433,7 +440,8 @@ export class CityScene extends Phaser.Scene {
   private confirm(): void {
     const ride = this.focusRide();
     if (ride) {
-      this.driveRide(ride);
+      if (ride.kind === "car" && !ride.owned) this.buyCar(ride);
+      else this.driveRide(ride);
       return;
     }
     if (this.inStock()) {
@@ -460,7 +468,68 @@ export class CityScene extends Phaser.Scene {
   private stealFocused(): void {
     const ride = this.focusRide();
     if (!ride || ride.owned) return;
+    if (ride.kind === "car") this.pullOutside(ride);
     this.markStolen(ride);
+    if (ride.kind === "car") this.mount(ride);
+  }
+
+  private buyCar(ride: Vehicle): void {
+    if (!this.state.spend(ride.price)) {
+      this.popup(this.player.x, this.player.y - 28, "NEED CASH", "#f4f1ea");
+      return;
+    }
+    ride.owned = true;
+    ride.stolen = false;
+    ride.speed = 0;
+    this.state.ownedVehicles.add(ride.id);
+    this.pullOutside(ride);
+    this.mount(ride);
+    this.popup(ride.x, ride.y - 36, ride.name, "#d7c08a");
+  }
+
+  /** Drop a car on the road just outside the dealership, facing along the street. */
+  private pullOutside(ride: Vehicle): void {
+    const curb = this.map.carCurb;
+    const offsets = [0, 120, -120, 240, -240];
+    let spot = { x: curb.x, y: curb.y };
+    for (const dx of offsets) {
+      const next = { x: curb.x + dx, y: curb.y };
+      const blocked = this.hitsWall(next.x, next.y) || isWaterWorld(next.x, next.y);
+      const crowded = this.rides.some(
+        (other) => other !== ride && Phaser.Math.Distance.Between(other.x, other.y, next.x, next.y) < 100,
+      );
+      if (!blocked && !crowded) {
+        spot = next;
+        break;
+      }
+    }
+    ride.heading = Math.PI / 2;
+    ride.setRotation(Math.PI / 2);
+    ride.setPosition(spot.x, spot.y);
+    const body = ride.body as Phaser.Physics.Arcade.Body;
+    body.reset(spot.x, spot.y);
+    body.setVelocity(0, 0);
+    this.feet.set(ride, { x: spot.x, y: spot.y });
+  }
+
+  private refill(): void {
+    const ride = this.riding;
+    if (!ride) return;
+    const cost = this.fillCost(ride);
+    if (cost <= 0) return;
+    if (!this.state.spend(cost)) {
+      this.popup(ride.x, ride.y - 36, "NEED CASH", "#f4f1ea");
+      return;
+    }
+    ride.gas = ride.maxGas;
+    this.gasEmpty = false;
+    this.popup(ride.x, ride.y - 36, `FILLED $${cost}`, "#e2b34a");
+  }
+
+  private fillCost(ride: Vehicle): number {
+    const missing = ride.maxGas - ride.gas;
+    if (missing < 0.5) return 0;
+    return Math.max(1, Math.ceil((missing / ride.maxGas) * TUNING.gasFillCost));
   }
 
   private driveRide(ride: Vehicle): void {
@@ -791,10 +860,14 @@ export class CityScene extends Phaser.Scene {
   }
 
   private promptText(): string | null {
-    if (this.riding) return "F EXIT";
+    if (this.riding) {
+      const cost = this.fillCost(this.riding);
+      return cost > 0 ? `E FILL $${cost} · F EXIT` : "F EXIT";
+    }
     const ride = this.focusRide();
     if (ride) {
       if (ride.owned) return `E DRIVE ${ride.name}`;
+      if (ride.kind === "car" && ride.price > 0) return `E BUY $${ride.price} · F STEAL ${ride.name}`;
       return `E DRIVE · F STEAL ${ride.name}`;
     }
     const lines: string[] = [];
@@ -823,6 +896,11 @@ export class CityScene extends Phaser.Scene {
   private pushHud(): void {
     this.state.health = this.player.health;
     const snapshot = this.state.snapshot(this.hint());
+    if (this.riding) {
+      snapshot.driving = true;
+      snapshot.gas = this.riding.gas;
+      snapshot.maxGas = this.riding.maxGas;
+    }
     const hudKey = [
       snapshot.cash,
       snapshot.health,
@@ -831,6 +909,8 @@ export class CityScene extends Phaser.Scene {
       snapshot.food,
       snapshot.employed,
       snapshot.objective,
+      snapshot.driving ? 1 : 0,
+      Math.round(snapshot.gas),
       snapshot.businesses.join(","),
       snapshot.vehicles.join(","),
     ].join("|");

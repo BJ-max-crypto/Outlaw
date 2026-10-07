@@ -94,6 +94,9 @@ export class CityState {
       objective,
       food: this.food.length,
       employed: this.employed,
+      driving: false,
+      gas: 0,
+      maxGas: 100,
       businesses: [...this.ownedBusinesses],
       vehicles: [...this.ownedVehicles],
     };

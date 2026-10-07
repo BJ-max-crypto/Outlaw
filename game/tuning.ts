@@ -23,4 +23,6 @@ export const TUNING = {
   energyDrive: 0.35,
   bustSafetyMs: 2400,
   escapeMs: 90000,
+  gasBurn: 2.2,
+  gasFillCost: 45,
 } as const;

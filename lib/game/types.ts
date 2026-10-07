@@ -9,6 +9,9 @@ export type HudSnapshot = {
   objective: string;
   food: number;
   employed: boolean;
+  driving: boolean;
+  gas: number;
+  maxGas: number;
   businesses: string[];
   vehicles: string[];
 };

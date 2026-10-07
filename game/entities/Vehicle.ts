@@ -1,12 +1,16 @@
 import Phaser from "phaser";
 import type { PlacedRide } from "@/game/map/cityMap";
+import { TUNING } from "@/game/tuning";
 import type { MoveInput } from "./Player";
 
 export class Vehicle extends Phaser.Physics.Arcade.Sprite {
   readonly id: string;
   readonly kind: PlacedRide["kind"];
   readonly name: string;
+  readonly price: number;
   readonly maxSpeed: number;
+  readonly maxGas = 100;
+  gas = 100;
   readonly homeX: number;
   readonly homeY: number;
   readonly homeHeading: number;
@@ -23,6 +27,7 @@ export class Vehicle extends Phaser.Physics.Arcade.Sprite {
     this.id = spec.id;
     this.kind = spec.kind;
     this.name = spec.name;
+    this.price = spec.price;
     this.maxSpeed = spec.speed;
     this.homeX = spec.x;
     this.homeY = spec.y;
@@ -75,13 +80,16 @@ export class Vehicle extends Phaser.Physics.Arcade.Sprite {
       return;
     }
 
+    const dry = this.gas <= 0;
     const accel = this.kind === "boat" ? 280 : 640;
-    if (input.up) this.speed = Math.min(this.maxSpeed, this.speed + accel * dt);
-    if (input.down) this.speed = Math.max(-this.maxSpeed * 0.42, this.speed - accel * 0.7 * dt);
-    if (!throttle) {
+    if (!dry && input.up) this.speed = Math.min(this.maxSpeed, this.speed + accel * dt);
+    if (!dry && input.down) this.speed = Math.max(-this.maxSpeed * 0.42, this.speed - accel * 0.7 * dt);
+    if (dry || !throttle) {
       this.speed *= Math.exp(-2.2 * dt);
       if (Math.abs(this.speed) < 6) this.speed = 0;
     }
+    const pace = Math.min(1, Math.abs(this.speed) / this.maxSpeed);
+    if (!dry && pace > 0.04) this.gas = Math.max(0, this.gas - TUNING.gasBurn * pace * dt);
 
     const turn = (input.right ? 1 : 0) - (input.left ? 1 : 0);
     if (turn !== 0) {
@@ -124,6 +132,7 @@ export class Vehicle extends Phaser.Physics.Arcade.Sprite {
     this.stolen = false;
     this.occupied = false;
     this.heading = this.homeHeading;
+    this.gas = this.maxGas;
     this.setPosition(this.homeX, this.homeY);
     this.setRotation(this.homeHeading);
     this.stayParked();

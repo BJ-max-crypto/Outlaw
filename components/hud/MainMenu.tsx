@@ -15,7 +15,7 @@ export default function MainMenu({ ready, clerkEnabled, onPlay, onPlayOnline }: 
           <p className="text-[11px] font-semibold tracking-[0.42em] text-[#e25b2a]">OPEN CITY</p>
           <h1 className="font-display mt-3 text-8xl leading-[0.82] text-[#f4f1ea] sm:text-9xl">Runout</h1>
           <p className="mt-6 max-w-sm text-lg leading-snug text-[#d9d3c7]">
-            Drive or steal a ride, clock in once, and the pay follows you. Last a minute and a half and the cops quit.
+            Buy or steal a car and it pulls up outside, ready to drive. Gas runs down, and you pay to fill the tank.
           </p>
           <button
             type="button"
