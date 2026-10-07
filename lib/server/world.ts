@@ -34,16 +34,90 @@ const sessions = store.__runout.sessions;
 
 function database(): SupabaseClient | null {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) return null;
   return createClient(url, key);
 }
 
-function code(): string {
+type MemberRow = {
+  player_id: string;
+  username: string;
+  cash: number;
+  businesses: string[] | null;
+  reinforcements: number;
+  boat: boolean;
+  employed: boolean;
+};
+
+type HoldingRow = { island_id: string; held_by: string };
+
+export function sessionFromRows(
+  code: string,
+  hostId: string,
+  status: string,
+  members: MemberRow[],
+  holdings: HoldingRow[],
+): SessionState | null {
+  if (status !== "lobby" && status !== "live") return null;
+  if (members.length === 0) return null;
+  const held = new Map(holdings.map((row) => [row.island_id, row.held_by]));
+  return {
+    code,
+    hostId,
+    status,
+    members: members.map((member) => ({
+      id: member.player_id,
+      username: member.username,
+      cash: Number(member.cash) || 0,
+      businesses: member.businesses ?? [],
+      reinforcements: Number(member.reinforcements) || 0,
+      boat: Boolean(member.boat),
+      employed: Boolean(member.employed),
+      heldBy: held.get(member.player_id) ?? member.player_id,
+    })),
+  };
+}
+
+async function freshCode(): Promise<string> {
   const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  const db = database();
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    let value = "";
+    for (let i = 0; i < 4; i += 1) value += alphabet[Math.floor(Math.random() * alphabet.length)];
+    if (sessions.has(value)) continue;
+    if (!db) return value;
+    const { data } = await db.from("sessions").select("code").eq("code", value).maybeSingle();
+    if (!data) return value;
+  }
   let value = "";
   for (let i = 0; i < 4; i += 1) value += alphabet[Math.floor(Math.random() * alphabet.length)];
-  return sessions.has(value) ? code() : value;
+  return value;
+}
+
+async function loadSession(codeValue: string): Promise<SessionState | null> {
+  const key = codeValue.trim().toUpperCase();
+  if (!/^[A-Z0-9]{4}$/.test(key)) return null;
+  const cached = sessions.get(key);
+  if (cached) return cached;
+  const db = database();
+  if (!db) return null;
+  const { data: row } = await db.from("sessions").select("host_id, status").eq("code", key).maybeSingle();
+  if (!row) return null;
+  const { data: members } = await db
+    .from("session_members")
+    .select("player_id, username, cash, businesses, reinforcements, boat, employed")
+    .eq("code", key);
+  const { data: holdings } = await db.from("session_holdings").select("island_id, held_by").eq("code", key);
+  const session = sessionFromRows(
+    key,
+    String(row.host_id ?? ""),
+    String(row.status ?? ""),
+    (members ?? []) as MemberRow[],
+    (holdings ?? []) as HoldingRow[],
+  );
+  if (!session) return null;
+  sessions.set(key, session);
+  return session;
 }
 
 export function getAccount(id: string): Account | null {
@@ -132,9 +206,9 @@ function persistSession(session: SessionState): void {
   }
 }
 
-export function createSession(id: string, username: string): SessionState {
+export async function createSession(id: string, username: string): Promise<SessionState> {
   const session: SessionState = {
-    code: code(),
+    code: await freshCode(),
     hostId: id,
     status: "lobby",
     members: [blankMember(id, username)],
@@ -143,8 +217,8 @@ export function createSession(id: string, username: string): SessionState {
   return session;
 }
 
-export function joinSession(codeValue: string, id: string, username: string): SessionState | null {
-  const session = sessions.get(codeValue.toUpperCase());
+export async function joinSession(codeValue: string, id: string, username: string): Promise<SessionState | null> {
+  const session = await loadSession(codeValue);
   if (!session || session.status !== "lobby") return null;
   if (!session.members.some((member) => member.id === id)) {
     if (session.members.length >= 4) return null;
@@ -154,24 +228,24 @@ export function joinSession(codeValue: string, id: string, username: string): Se
   return session;
 }
 
-export function startSession(codeValue: string, id: string): SessionState | null {
-  const session = sessions.get(codeValue.toUpperCase());
+export async function startSession(codeValue: string, id: string): Promise<SessionState | null> {
+  const session = await loadSession(codeValue);
   if (!session || session.hostId !== id) return null;
   session.status = "live";
   persistSession(session);
   return session;
 }
 
-export function readSession(codeValue: string): SessionState | null {
-  return sessions.get(codeValue.toUpperCase()) ?? null;
+export async function readSession(codeValue: string): Promise<SessionState | null> {
+  return loadSession(codeValue);
 }
 
-export function syncMember(
+export async function syncMember(
   codeValue: string,
   id: string,
   patch: Partial<Pick<IslandCard, "cash" | "businesses" | "employed">>,
-): SessionState | null {
-  const session = sessions.get(codeValue.toUpperCase());
+): Promise<SessionState | null> {
+  const session = await loadSession(codeValue);
   if (!session) return null;
   const member = session.members.find((item) => item.id === id);
   if (!member) return null;
@@ -182,8 +256,8 @@ export function syncMember(
   return session;
 }
 
-export function buyBoat(codeValue: string, id: string, cash: number): { session: SessionState } | { error: string } {
-  const session = sessions.get(codeValue.toUpperCase());
+export async function buyBoat(codeValue: string, id: string, cash: number): Promise<{ session: SessionState } | { error: string }> {
+  const session = await loadSession(codeValue);
   if (!session || session.status !== "live") return { error: "Session is not live." };
   const member = session.members.find((item) => item.id === id);
   if (!member) return { error: "You are not in this session." };
@@ -196,8 +270,12 @@ export function buyBoat(codeValue: string, id: string, cash: number): { session:
   return { session };
 }
 
-export function buyReinforcement(codeValue: string, id: string, cash: number): { session: SessionState } | { error: string } {
-  const session = sessions.get(codeValue.toUpperCase());
+export async function buyReinforcement(
+  codeValue: string,
+  id: string,
+  cash: number,
+): Promise<{ session: SessionState } | { error: string }> {
+  const session = await loadSession(codeValue);
   if (!session || session.status !== "live") return { error: "Session is not live." };
   const member = session.members.find((item) => item.id === id);
   if (!member) return { error: "You are not in this session." };
@@ -209,13 +287,13 @@ export function buyReinforcement(codeValue: string, id: string, cash: number): {
   return { session };
 }
 
-export function buyIsland(
+export async function buyIsland(
   codeValue: string,
   id: string,
   targetId: string,
   cash: number,
-): { session: SessionState } | { error: string } {
-  const session = sessions.get(codeValue.toUpperCase());
+): Promise<{ session: SessionState } | { error: string }> {
+  const session = await loadSession(codeValue);
   if (!session || session.status !== "live") return { error: "Session is not live." };
   const buyer = session.members.find((item) => item.id === id);
   const target = session.members.find((item) => item.id === targetId);

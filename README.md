@@ -45,8 +45,8 @@ The AdSense loader is in the site head on every page (`app/layout.tsx`, publishe
 
 ## Online
 
-Local play does not need an account. The dashboard still asks for a username and stores it on this browser.
+Local play does not need an account. Leave every value in `.env.example` empty, copy it to `.env.local` if you want, and the dashboard still asks for a username stored on this browser.
 
-Copy `.env.example` to `.env.local` and add your Clerk and Supabase keys when you want accounts. Do not run `npx clerk init` from this repo. Run `supabase/schema.sql` in the Supabase project. That script adds `username`, stores cash as `bigint` (island purchases pass two billion), and creates `sessions`, `session_members`, `session_holdings`, and `shop_claims`.
+Copy `.env.example` to `.env.local` and fill in the Clerk and Supabase keys when you want accounts. Do not run `npx clerk init` from this repo. Both `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` and `CLERK_SECRET_KEY` have to be set together. With those set, sign-in is required, the Clerk user id is the player id for saves, ranks, and invite sessions, and the guest header is ignored. After sign-in the dashboard asks for a username and stores it on that account.
 
-With those keys, sign-up is required before the username step, and profiles are written to Supabase as well as the server memory used for a live invite. A session that is only in memory does not survive a server restart until it is read back from Supabase.
+Run `supabase/schema.sql` in the Supabase project before using the database. That script adds `username`, stores cash as `bigint` (island purchases pass two billion), creates `sessions`, `session_members`, `session_holdings`, and `shop_claims`, and lets a signed-in player read their own profile. In the Supabase dashboard, add Clerk as a third-party auth provider so `auth.jwt()->>'sub'` is the Clerk user id. The game server writes profiles and sessions with `SUPABASE_SERVICE_ROLE_KEY` and reloads an invite from Supabase after a restart. Cash, businesses, and stock trades stay server-authoritative.

@@ -1,12 +1,12 @@
 import type { CityProfile } from "@/lib/game/types";
-import { playerId } from "@/lib/server/identity";
+import { playerId, PUBLIC_PLAYER_ID } from "@/lib/server/identity";
 import { postEconomy, publicCard, readEconomy } from "@/lib/server/ledger";
 import { loadAccount } from "@/lib/server/world";
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const other = url.searchParams.get("id");
-  if (other && /^[a-zA-Z0-9-]{8,80}$/.test(other)) {
+  if (other && PUBLIC_PLAYER_ID.test(other)) {
     const card = await publicCard(other);
     if (!card) return Response.json({ profile: null }, { status: 404 });
     return Response.json({ profile: card });

@@ -17,7 +17,8 @@ import { TUNING } from "@/game/tuning";
 import { gameBus } from "@/lib/game/bus";
 import type { EconomyView } from "@/lib/economy/model";
 import type { CityProfile, GroceryShelf, HudSnapshot, MapSnapshot, SessionView, StockBook, StockOrder, WorldPos } from "@/lib/game/types";
-import { localPlayerId, localUsername, playerHeaders, readSave, rememberUsername, writeSave } from "@/lib/online/player";
+import { usePlayerIdentity } from "@/lib/online/identity";
+import { localUsername, playerHeaders, readSave, rememberUsername, writeSave } from "@/lib/online/player";
 
 type Screen = "dashboard" | "play";
 
@@ -43,8 +44,7 @@ const initialHud: HudSnapshot = {
   netWorth: TUNING.startingCash,
 };
 
-function boot(mode: "single" | "multi", session: SessionView | null, username: string): void {
-  const id = localPlayerId();
+function boot(mode: "single" | "multi", session: SessionView | null, username: string, id: string): void {
   const members = session?.members ?? [];
   const islands: IslandCard[] = orderIslands(
     members.map((member) => ({ ...member })),
@@ -62,6 +62,9 @@ function boot(mode: "single" | "multi", session: SessionView | null, username: s
 }
 
 export default function RunoutApp() {
+  const identity = usePlayerIdentity();
+  const selfRef = useRef(identity.id);
+  selfRef.current = identity.id;
   const [ready, setReady] = useState(false);
   const [screen, setScreen] = useState<Screen>("dashboard");
   const [username, setUsername] = useState("");
@@ -102,8 +105,44 @@ export default function RunoutApp() {
   const playMultiRef = useRef<(next: SessionView) => void>(() => undefined);
   const liveBoot = useRef("");
 
+  const playerId = (): string => selfRef.current;
+
   useEffect(() => {
-    setUsername(localUsername());
+    if (!identity.loaded) return;
+    const id = identity.id;
+    if (!id) {
+      setUsername("");
+      return;
+    }
+    setUsername(localUsername(id));
+    let cancelled = false;
+    void fetch("/api/account", { headers: playerHeaders(id) })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data: { account?: { username?: string } } | null) => {
+        if (cancelled || !data?.account) return;
+        const name = (data.account.username ?? "").trim();
+        if (name.length < 2) return;
+        rememberUsername(name, id);
+        setUsername(name);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [identity.loaded, identity.id]);
+
+  useEffect(() => {
+    if (!clerkEnabled || !identity.loaded || identity.signedIn) return;
+    setSession(null);
+    if (screen === "play") {
+      currentGame()?.scene.pause("city");
+      setPaused(true);
+      setCanReturn(false);
+      setScreen("dashboard");
+    }
+  }, [identity.loaded, identity.signedIn, screen]);
+
+  useEffect(() => {
     const unsub = [
       gameBus.on("hud", (next) => {
         hudAt.current = Date.now();
@@ -147,7 +186,7 @@ export default function RunoutApp() {
     const code = session.code;
     let stopped = false;
     const tick = () => {
-      void fetch(`/api/session?code=${code}`, { headers: playerHeaders() })
+      void fetch(`/api/session?code=${code}`, { headers: playerHeaders(playerId()) })
         .then((response) => response.json())
         .then((data: { session?: SessionView }) => {
           if (stopped || !data.session) return;
@@ -177,7 +216,7 @@ export default function RunoutApp() {
       if (match.mode === "multi" && match.code) {
         void fetch("/api/session", {
           method: "POST",
-          headers: playerHeaders(),
+          headers: playerHeaders(playerId()),
           body: JSON.stringify({
             action: "sync",
             code: match.code,
@@ -208,7 +247,7 @@ export default function RunoutApp() {
 
   useEffect(() => {
     if (panel !== "ranks") return;
-    void fetch(`/api/leaderboard?board=${board}`, { headers: playerHeaders() })
+    void fetch(`/api/leaderboard?board=${board}`, { headers: playerHeaders(playerId()) })
       .then((response) => response.json())
       .then((data: { rows?: { id: string; username: string; value: number }[]; rank?: number | null }) => {
         setRows(data.rows ?? []);
@@ -219,7 +258,7 @@ export default function RunoutApp() {
 
   const wallet = (): HudSnapshot => {
     const snap = hudRef.current;
-    const saved = readBlob();
+    const saved = readBlob(playerId());
     const live = playAt.current > 0 && hudAt.current >= playAt.current;
     if (!live && saved) {
       return {
@@ -235,7 +274,7 @@ export default function RunoutApp() {
   };
 
   const openPlayer = async (id: string) => {
-    if (id === localPlayerId()) {
+    if (id === playerId()) {
       setSubject(null);
       setPanel("profile");
       return;
@@ -251,11 +290,11 @@ export default function RunoutApp() {
     const run = tail.current.then(async () => {
       try {
       const snap = wallet();
-      const saved = readBlob();
+      const saved = readBlob(playerId());
       const economy = viewRef.current;
       const response = await fetch("/api/economy", {
         method: "POST",
-        headers: playerHeaders(),
+        headers: playerHeaders(playerId()),
         body: JSON.stringify({
           username: usernameRef.current,
           cash: snap.cash,
@@ -293,6 +332,7 @@ export default function RunoutApp() {
             stockProfit: data.view.realized,
             objectivesDone: data.view.objectivesDone,
           }),
+          playerId(),
         );
       }
       if (!response.ok && !quiet) gameBus.emit("ledger-deny", data.reason ?? "NOT YET");
@@ -316,14 +356,14 @@ export default function RunoutApp() {
     }
     const response = await fetch("/api/account", {
       method: "POST",
-      headers: playerHeaders(),
+      headers: playerHeaders(playerId()),
       body: JSON.stringify({ username: trimmed }),
     });
     if (!response.ok) {
       setNotice("That username was not saved.");
       return;
     }
-    rememberUsername(trimmed);
+    rememberUsername(trimmed, playerId());
     setUsername(trimmed);
     setNotice("");
   };
@@ -342,7 +382,7 @@ export default function RunoutApp() {
     setMode("single");
     setSession(null);
     setOffer(null);
-    const saved = readSave();
+    const saved = readSave(playerId());
     let profile: CityProfile | null = null;
     if (saved) {
       try {
@@ -352,7 +392,7 @@ export default function RunoutApp() {
       }
     }
     setPendingProfile(profile);
-    boot("single", null, username);
+    boot("single", null, username, playerId());
     setPaused(false);
     setCanReturn(false);
     setScreen("play");
@@ -370,7 +410,7 @@ export default function RunoutApp() {
     playAt.current = Date.now();
     setMode("multi");
     setSession(next);
-    boot("multi", next, usernameRef.current || username);
+    boot("multi", next, usernameRef.current || username, playerId());
     setPaused(false);
     setCanReturn(false);
     setScreen("play");
@@ -381,7 +421,7 @@ export default function RunoutApp() {
     setNotice("");
     const response = await fetch("/api/session", {
       method: "POST",
-      headers: playerHeaders(),
+      headers: playerHeaders(playerId()),
       body: JSON.stringify({ action: "create", username }),
     });
     const data = (await response.json()) as { session?: SessionView };
@@ -396,7 +436,7 @@ export default function RunoutApp() {
     setNotice("");
     const response = await fetch("/api/session", {
       method: "POST",
-      headers: playerHeaders(),
+      headers: playerHeaders(playerId()),
       body: JSON.stringify({ action: "join", code, username }),
     });
     const data = (await response.json()) as { session?: SessionView };
@@ -408,10 +448,10 @@ export default function RunoutApp() {
   };
 
   const startLobby = async () => {
-    if (!session || session.hostId !== localPlayerId()) return;
+    if (!session || session.hostId !== playerId()) return;
     const response = await fetch("/api/session", {
       method: "POST",
-      headers: playerHeaders(),
+      headers: playerHeaders(playerId()),
       body: JSON.stringify({ action: "start", code: session.code, username }),
     });
     const data = (await response.json()) as { session?: SessionView };
@@ -426,7 +466,7 @@ export default function RunoutApp() {
     const match = getMatch();
     const response = await fetch("/api/session", {
       method: "POST",
-      headers: playerHeaders(),
+      headers: playerHeaders(playerId()),
       body: JSON.stringify({
         action,
         code: match.code,
@@ -444,7 +484,7 @@ export default function RunoutApp() {
     }
     if (data.leading) gameBus.emit("banner", "FIRST");
     setSession(data.session);
-    const mine = data.session.members.find((member) => member.id === localPlayerId());
+    const mine = data.session.members.find((member) => member.id === playerId());
     if (mine) {
       gameBus.emit("profile", {
         cash: mine.cash,
@@ -464,12 +504,12 @@ export default function RunoutApp() {
       <GameCanvas onReady={setReady} />
       {screen === "dashboard" && (
         <Dashboard
-          ready={ready}
+          ready={ready && identity.loaded && (!clerkEnabled || identity.signedIn)}
           clerkEnabled={clerkEnabled}
           username={username}
           canContinue={canReturn}
           session={session && session.status === "lobby" ? session : null}
-          selfId={localPlayerId()}
+          selfId={playerId()}
           notice={notice}
           onUsername={(value) => void saveName(value)}
           onSingle={() => void playSingle()}
@@ -515,11 +555,11 @@ export default function RunoutApp() {
           onOpenPlayer={(id) => void openPlayer(id)}
         />
       )}
-      {screen === "play" && <ShopButton onReward={(rewardId) => void grantReward(rewardId)} />}
+      {screen === "play" && <ShopButton onReward={(rewardId) => void grantReward(rewardId, playerId())} />}
       {screen === "play" && mode === "multi" && session && (
         <IslandActions
           session={session}
-          playerId={localPlayerId()}
+          playerId={playerId()}
           onBoat={() => void sessionAction("boat")}
           onReinforce={() => void sessionAction("reinforcement")}
         />
@@ -547,8 +587,8 @@ export default function RunoutApp() {
   );
 }
 
-function readBlob(): CityProfile | null {
-  const raw = readSave();
+function readBlob(playerId: string): CityProfile | null {
+  const raw = readSave(playerId);
   if (!raw) return null;
   try {
     const parsed = JSON.parse(raw) as CityProfile;
@@ -559,10 +599,10 @@ function readBlob(): CityProfile | null {
   }
 }
 
-async function grantReward(rewardId: string): Promise<void> {
+async function grantReward(rewardId: string, id: string): Promise<void> {
   const response = await fetch("/api/shop", {
     method: "POST",
-    headers: playerHeaders(),
+    headers: playerHeaders(id),
     body: JSON.stringify({ rewardId }),
   });
   const data = (await response.json()) as { reward?: { multiplier: number; ms: number; cash: number } };

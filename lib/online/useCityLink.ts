@@ -5,7 +5,13 @@ import { gameBus } from "@/lib/game/bus";
 import type { HudSnapshot, Peer } from "@/lib/game/types";
 import { getSupabase } from "@/lib/supabase/client";
 
-export function useCityLink(active: boolean, userId: string | null, name: string, hud: HudSnapshot): void {
+export function useCityLink(
+  active: boolean,
+  userId: string | null,
+  name: string,
+  hud: HudSnapshot,
+  accessToken?: () => Promise<string | null>,
+): void {
   const hudRef = useRef(hud);
   hudRef.current = hud;
   const pos = useRef({ x: 0, y: 0 });
@@ -18,7 +24,7 @@ export function useCityLink(active: boolean, userId: string | null, name: string
 
   useEffect(() => {
     if (!active || !userId) return;
-    const supabase = getSupabase();
+    const supabase = getSupabase(accessToken);
     if (!supabase) return;
 
     const channel = supabase.channel("runout-city");
@@ -64,5 +70,5 @@ export function useCityLink(active: boolean, userId: string | null, name: string
       gameBus.emit("peers", []);
       void supabase.removeChannel(channel);
     };
-  }, [active, userId, name]);
+  }, [active, userId, name, accessToken]);
 }

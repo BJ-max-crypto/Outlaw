@@ -12,23 +12,35 @@ export function localPlayerId(): string {
   return id;
 }
 
-export function localUsername(): string {
+export function localUsername(playerId = ""): string {
   if (typeof window === "undefined") return "";
+  if (playerId) {
+    const scoped = window.localStorage.getItem(`${NAME_KEY}:${playerId}`);
+    if (scoped) return scoped;
+    if (playerId.startsWith("user_")) return "";
+  }
   return window.localStorage.getItem(NAME_KEY) ?? "";
 }
 
-export function rememberUsername(username: string): void {
-  window.localStorage.setItem(NAME_KEY, username);
+export function rememberUsername(username: string, playerId = ""): void {
+  if (playerId) window.localStorage.setItem(`${NAME_KEY}:${playerId}`, username);
+  if (!playerId.startsWith("user_")) window.localStorage.setItem(NAME_KEY, username);
 }
 
-export function playerHeaders(): HeadersInit {
-  return { "content-type": "application/json", "x-runout-player": localPlayerId() };
+export function playerHeaders(playerId = ""): HeadersInit {
+  const id = playerId || localPlayerId();
+  return { "content-type": "application/json", "x-runout-player": id };
 }
 
-export function readSave(): string | null {
-  return window.localStorage.getItem(SAVE_KEY);
+function saveKey(playerId: string): string {
+  return playerId.startsWith("user_") ? `${SAVE_KEY}:${playerId}` : SAVE_KEY;
 }
 
-export function writeSave(payload: string): void {
-  window.localStorage.setItem(SAVE_KEY, payload);
+export function readSave(playerId = ""): string | null {
+  if (typeof window === "undefined") return null;
+  return window.localStorage.getItem(saveKey(playerId));
+}
+
+export function writeSave(payload: string, playerId = ""): void {
+  window.localStorage.setItem(saveKey(playerId), payload);
 }

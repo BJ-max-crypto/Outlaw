@@ -53,3 +53,20 @@ alter table public.sessions enable row level security;
 alter table public.session_members enable row level security;
 alter table public.session_holdings enable row level security;
 alter table public.shop_claims enable row level security;
+
+-- Clerk is the auth provider. Add it as a Supabase third-party auth provider so
+-- auth.jwt()->>'sub' is the Clerk user id. The game server writes with the service
+-- role, which bypasses these policies. Signed-in players can read their own row.
+drop policy if exists "read own profile" on public.profiles;
+create policy "read own profile"
+  on public.profiles
+  for select
+  to authenticated
+  using ((select auth.jwt() ->> 'sub') = id);
+
+drop policy if exists "read own shop claims" on public.shop_claims;
+create policy "read own shop claims"
+  on public.shop_claims
+  for select
+  to authenticated
+  using ((select auth.jwt() ->> 'sub') = player_id);

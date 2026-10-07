@@ -61,6 +61,8 @@ function DashboardBody({
             Play your island alone, or open a session and try to buy the others out.
           </p>
 
+          {clerkEnabled && !loaded && <p className="mt-8 text-sm tracking-[0.16em] text-[#a39e94]">CHECKING ACCOUNT</p>}
+
           {clerkEnabled && loaded && !signedIn && (
             <div className="mt-8 flex flex-col items-start gap-3">
               <SignInButton mode="modal">
