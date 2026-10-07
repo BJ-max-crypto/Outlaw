@@ -103,4 +103,25 @@ export type GameEventMap = {
   "grocery-store": undefined;
   "grocery-close": undefined;
   escape: number | null;
+  menu: undefined;
+  reward: { multiplier: number; ms: number; cash: number };
+  session: SessionView;
+  "spawn-boat": undefined;
+  "island-offer": { id: string; username: string; worth: string } | null;
+};
+
+export type SessionView = {
+  code: string;
+  hostId: string;
+  status: "lobby" | "live";
+  members: {
+    id: string;
+    username: string;
+    cash: number;
+    businesses: string[];
+    reinforcements: number;
+    heldBy: string;
+    boat: boolean;
+    employed: boolean;
+  }[];
 };

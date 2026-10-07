@@ -17,6 +17,12 @@ export class CityState {
   private shares = new Map<string, number>();
   private jobMs = 0;
   private bizMs = 0;
+  /** Income taken from islands you bought, paid on the business timer. */
+  islandPay = 0;
+  /** Someone else bought this island, so its wages and store income leave with it. */
+  incomeFrozen = false;
+  /** Ad reward scale. 2 doubles every earning until it expires. */
+  earningsScale = 1;
 
   constructor(cash = TUNING.startingCash) {
     this.cash = cash;
@@ -63,7 +69,7 @@ export class CityState {
   /** Wages follow you after you clock in. Business income has its own timer. */
   tickIncome(delta: number): number {
     let pay = 0;
-    if (!this.employed) {
+    if (this.incomeFrozen || !this.employed) {
       this.jobMs = 0;
     } else {
       this.jobMs += delta;
@@ -75,8 +81,12 @@ export class CityState {
     this.bizMs += delta;
     if (this.bizMs >= TUNING.jobIntervalMs) {
       this.bizMs -= TUNING.jobIntervalMs;
-      for (const id of this.ownedBusinesses) pay += businessById(id)?.income ?? 0;
+      if (!this.incomeFrozen) {
+        for (const id of this.ownedBusinesses) pay += businessById(id)?.income ?? 0;
+      }
+      pay += this.islandPay;
     }
+    pay = Math.round(pay * this.earningsScale);
     if (pay <= 0) return 0;
     this.cash += pay;
     return pay;

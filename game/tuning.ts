@@ -25,4 +25,8 @@ export const TUNING = {
   escapeMs: 90000,
   gasBurn: 2.2,
   gasFillCost: 45,
+  crossingBoatCost: 1_000_000,
+  islandBuyCost: 1_000_000_000,
+  reinforcementCost: 100_000,
+  reinforcementPay: 24,
 } as const;

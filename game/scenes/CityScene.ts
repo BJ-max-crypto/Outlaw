@@ -1,13 +1,15 @@
 import Phaser from "phaser";
 import { gameBus } from "@/lib/game/bus";
-import type { CityProfile, Peer, StockOrder } from "@/lib/game/types";
+import type { CityProfile, Peer, SessionView, StockOrder } from "@/lib/game/types";
 import { Siren } from "@/game/audio/siren";
 import { Player, type MoveInput } from "@/game/entities/Player";
 import { createActorTextures } from "@/game/entities/textures";
 import { Vehicle } from "@/game/entities/Vehicle";
 import { buildCityMap, closestSpawns, createWallBodies, paintCity, type PlacedBusiness } from "@/game/map/cityMap";
 import { rectContains } from "@/game/map/geometry";
-import { isWaterWorld } from "@/game/map/waterMask";
+import { MAP_SCALE, isWaterWorld, landIslandIndex, setIslandOrigins } from "@/game/map/waterMask";
+import { getMatch, heldIncome, islandIncome, islandOrigin, ISLAND_SPAN, orderIslands, setMatch, takePendingProfile } from "@/game/mode/match";
+import { formatCash } from "@/lib/game/format";
 import { CityState } from "@/game/state/CityState";
 import { PoliceDirector } from "@/game/systems/PoliceDirector";
 import { RobberySystem } from "@/game/systems/RobberySystem";
@@ -33,6 +35,7 @@ export class CityScene extends Phaser.Scene {
   private police!: PoliceDirector;
   private siren = new Siren();
   private walls!: Phaser.Physics.Arcade.StaticGroup;
+  private rideGroup!: Phaser.Physics.Arcade.Group;
   private blockers: Phaser.Geom.Rectangle[] = [];
   private footWalls!: Phaser.Physics.Arcade.Collider;
   private playerRides!: Phaser.Physics.Arcade.Collider;
@@ -65,7 +68,15 @@ export class CityScene extends Phaser.Scene {
   private offGroceryBuy: (() => void) | null = null;
   private offGroceryStore: (() => void) | null = null;
   private offGroceryClose: (() => void) | null = null;
+  private offSession: (() => void) | null = null;
+  private offReward: (() => void) | null = null;
+  private offBoat: (() => void) | null = null;
+  private hasBoat = false;
+  private rewardUntil = 0;
+  private offeredIsland: number | null = null;
+  private homeSpot = { x: 0, y: 0 };
   private onWheel?: (event: WheelEvent) => void;
+  private onKeyDown?: (event: KeyboardEvent) => void;
   private keys!: {
     up: Phaser.Input.Keyboard.Key;
     down: Phaser.Input.Keyboard.Key;
@@ -81,6 +92,7 @@ export class CityScene extends Phaser.Scene {
     g: Phaser.Input.Keyboard.Key;
     shift: Phaser.Input.Keyboard.Key;
     m: Phaser.Input.Keyboard.Key;
+    esc: Phaser.Input.Keyboard.Key;
     food: Phaser.Input.Keyboard.Key[];
   };
 
@@ -130,13 +142,17 @@ export class CityScene extends Phaser.Scene {
     this.groceryDismissed = false;
     this.viewZoom = 1.52;
     this.lastPinch = 0;
+    this.hasBoat = false;
+    this.rewardUntil = 0;
+    this.offeredIsland = null;
+    this.homeSpot = { x: this.map.playerSpawn.x, y: this.map.playerSpawn.y };
     this.siren = new Siren();
 
     paintCity(this);
     createActorTextures(this);
     this.walls = createWallBodies(this, this.map.walls);
     this.blockers = this.map.walls.map((wall) => new Phaser.Geom.Rectangle(wall.x, wall.y, wall.w, wall.h));
-    this.physics.world.setBounds(0, 0, this.map.world.width, this.map.world.height);
+    this.layoutIslands();
 
     this.player = new Player(this, this.map.playerSpawn.x, this.map.playerSpawn.y);
     this.footWalls = this.physics.add.collider(this.player, this.walls);
@@ -144,17 +160,17 @@ export class CityScene extends Phaser.Scene {
     this.wanted = new WantedSystem(this.state);
     this.police = new PoliceDirector(this);
 
-    const rideGroup = this.physics.add.group({ immovable: true, collideWorldBounds: true });
+    this.rideGroup = this.physics.add.group({ immovable: true, collideWorldBounds: true });
     for (const spec of this.map.rides) {
       const ride = new Vehicle(this, spec);
-      rideGroup.add(ride);
+      this.rideGroup.add(ride);
       ride.stayParked();
       this.rides.push(ride);
     }
-    this.physics.add.collider(rideGroup, this.walls);
-    this.physics.add.collider(rideGroup, rideGroup);
-    this.playerRides = this.physics.add.collider(this.player, rideGroup);
-    this.physics.add.overlap(this.police.group, rideGroup, (_cop, ride) => {
+    this.physics.add.collider(this.rideGroup, this.walls);
+    this.physics.add.collider(this.rideGroup, this.rideGroup);
+    this.playerRides = this.physics.add.collider(this.player, this.rideGroup);
+    this.physics.add.overlap(this.police.group, this.rideGroup, (_cop, ride) => {
       if ((ride as Vehicle).occupied) this.onCopHit();
     });
 
@@ -185,6 +201,12 @@ export class CityScene extends Phaser.Scene {
       this.groceryDismissed = true;
       this.closeGrocery();
     });
+    this.offSession = gameBus.on("session", (session) => this.applySession(session));
+    this.offReward = gameBus.on("reward", (reward) => this.applyReward(reward));
+    this.offBoat = gameBus.on("spawn-boat", () => {
+      this.hasBoat = true;
+      this.spawnYacht();
+    });
 
     this.events.on(Phaser.Scenes.Events.POST_UPDATE, this.onPostUpdate, this);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
@@ -197,7 +219,11 @@ export class CityScene extends Phaser.Scene {
       this.offGroceryBuy?.();
       this.offGroceryStore?.();
       this.offGroceryClose?.();
+      this.offSession?.();
+      this.offReward?.();
+      this.offBoat?.();
       if (this.onWheel) this.game.canvas.removeEventListener("wheel", this.onWheel);
+      if (this.onKeyDown) window.removeEventListener("keydown", this.onKeyDown);
       this.siren.stop();
       this.closeStocks();
       this.closeGrocery();
@@ -219,6 +245,22 @@ export class CityScene extends Phaser.Scene {
     gameBus.emit("stocks", null);
     gameBus.emit("grocery", null);
     gameBus.emit("escape", null);
+    gameBus.emit("island-offer", null);
+    const pending = takePendingProfile();
+    if (pending) this.applyProfile(pending);
+    const match = getMatch();
+    if (match.mode === "multi") {
+      this.applyHeldIncome(match.islands, match.playerId);
+      const mine = match.islands.find((island) => island.id === match.playerId);
+      if (mine?.boat) {
+        this.hasBoat = true;
+        this.spawnYacht();
+      }
+    }
+    if (match.autostart) {
+      this.live = true;
+      this.focusGame();
+    }
     this.contain();
     this.pushHud();
   }
@@ -250,6 +292,10 @@ export class CityScene extends Phaser.Scene {
       if (ride !== this.riding) ride.stayParked();
     }
 
+    if (this.rewardUntil > 0 && this.time.now >= this.rewardUntil) {
+      this.rewardUntil = 0;
+      this.state.earningsScale = 1;
+    }
     this.drainEnergy(delta, input);
     const pay = this.state.tickIncome(delta);
     if (pay > 0) this.popup(this.player.x, this.player.y - 36, `+$${pay}`, "#d7c08a");
@@ -259,6 +305,7 @@ export class CityScene extends Phaser.Scene {
     if (this.escapeMs <= 0) this.decayWanted(delta);
     this.tickEscape(delta);
     this.handleActions();
+    this.watchIslands();
     this.syncGrocery();
     this.runRobbery(delta);
 
@@ -317,7 +364,147 @@ export class CityScene extends Phaser.Scene {
     this.lastPinch = dist;
   }
 
+  /** Copies of the island sit across the ocean. Index 0 stays on the original map. */
+  private layoutIslands(): void {
+    const match = getMatch();
+    const count = match.mode === "multi" ? Math.max(1, match.islands.length) : 1;
+    const origins = Array.from({ length: count }, (_, index) => islandOrigin(index));
+    setIslandOrigins(origins);
+    for (let index = 1; index < origins.length; index += 1) {
+      const origin = origins[index];
+      this.add.image(origin.x, origin.y, "island").setOrigin(0, 0).setScale(MAP_SCALE).setDepth(0);
+      const name = match.islands[index]?.username || "ISLAND";
+      this.add
+        .text(origin.x + ISLAND_SPAN / 2, origin.y + 90, name, {
+          fontFamily: "Arial Black, Arial, sans-serif",
+          fontSize: "42px",
+          color: "#f4f1ea",
+        })
+        .setOrigin(0.5)
+        .setDepth(6);
+      for (const wall of this.map.walls) {
+        const shifted = { x: wall.x + origin.x, y: wall.y + origin.y, w: wall.w, h: wall.h };
+        this.blockers.push(new Phaser.Geom.Rectangle(shifted.x, shifted.y, shifted.w, shifted.h));
+        const body = this.add.rectangle(shifted.x + shifted.w / 2, shifted.y + shifted.h / 2, shifted.w, shifted.h, 0x000000, 0);
+        this.walls.add(body);
+      }
+    }
+    const width = origins[origins.length - 1].x + ISLAND_SPAN;
+    this.physics.world.setBounds(0, 0, width, ISLAND_SPAN);
+    this.walls.refresh();
+  }
+
+  /** The million-dollar yacht is the only ride that may leave home water. */
+  private fenceCrossing(): void {
+    if (getMatch().mode !== "multi" || this.hasBoat) return;
+    const target = this.riding ?? this.player;
+    const inside = target.x >= 0 && target.y >= 0 && target.x <= ISLAND_SPAN && target.y <= ISLAND_SPAN;
+    if (inside) {
+      this.homeSpot = { x: target.x, y: target.y };
+      return;
+    }
+    target.setPosition(this.homeSpot.x, this.homeSpot.y);
+    const body = target.body as Phaser.Physics.Arcade.Body | null;
+    body?.setVelocity(0, 0);
+    if (target instanceof Vehicle) target.speed = 0;
+  }
+
+  private watchIslands(): void {
+    const match = getMatch();
+    if (match.mode !== "multi" || this.riding) {
+      this.clearIslandOffer();
+      return;
+    }
+    const index = landIslandIndex(this.player.x, this.player.y);
+    if (index === null || index === 0) {
+      this.clearIslandOffer();
+      return;
+    }
+    const card = match.islands[index];
+    if (!card || card.heldBy === match.playerId) {
+      this.clearIslandOffer();
+      return;
+    }
+    if (this.offeredIsland === index) return;
+    this.offeredIsland = index;
+    const income = islandIncome(card);
+    gameBus.emit("island-offer", {
+      id: card.id,
+      username: card.username,
+      worth: income > 0 ? `It brings in ${formatCash(income)} each pay cycle.` : "Nothing on it is earning yet.",
+    });
+  }
+
+  private clearIslandOffer(): void {
+    if (this.offeredIsland === null) return;
+    this.offeredIsland = null;
+    gameBus.emit("island-offer", null);
+  }
+
+  private nearestLand(x: number, y: number): { x: number; y: number } | null {
+    for (const radius of [56, 96, 150, 220, 320]) {
+      for (let step = 0; step < 16; step += 1) {
+        const angle = (Math.PI * 2 * step) / 16;
+        const point = { x: x + Math.cos(angle) * radius, y: y + Math.sin(angle) * radius };
+        if (!isWaterWorld(point.x, point.y) && !this.hitsWall(point.x, point.y)) return point;
+      }
+    }
+    return null;
+  }
+
+  private applySession(session: SessionView): void {
+    const match = getMatch();
+    const islands = orderIslands(session.members, match.playerId);
+    setMatch({ ...match, code: session.code, islands, mode: "multi" });
+    this.applyHeldIncome(islands, match.playerId);
+    const mine = islands.find((island) => island.id === match.playerId);
+    if (mine?.boat) {
+      this.hasBoat = true;
+      this.spawnYacht();
+    }
+  }
+
+  private applyHeldIncome(islands: SessionView["members"], playerId: string): void {
+    const mine = islands.find((island) => island.id === playerId);
+    this.state.incomeFrozen = Boolean(mine && mine.heldBy !== playerId);
+    this.state.islandPay = heldIncome(islands, playerId);
+  }
+
+  private applyReward(reward: { multiplier: number; ms: number; cash: number }): void {
+    this.state.earningsScale = reward.multiplier > 0 ? reward.multiplier : 1;
+    this.rewardUntil = reward.ms > 0 ? this.time.now + reward.ms : 0;
+    if (reward.cash > 0) {
+      this.state.cash += reward.cash;
+      this.popup(this.player.x, this.player.y - 36, `+$${reward.cash}`, "#d7c08a");
+    }
+    this.pushHud();
+  }
+
+  private spawnYacht(): void {
+    if (this.rides.some((ride) => ride.id === "yacht")) return;
+    const spot = { x: 1032 * MAP_SCALE, y: 352 * MAP_SCALE };
+    const ride = new Vehicle(this, {
+      id: "yacht",
+      kind: "boat",
+      texture: "boat-deck",
+      x: spot.x,
+      y: spot.y,
+      heading: 0.15,
+      name: "YACHT",
+      speed: 290,
+      price: 0,
+    });
+    this.rideGroup.add(ride);
+    ride.stayParked();
+    ride.owned = true;
+    this.rides.push(ride);
+    this.feet.set(ride, { x: spot.x, y: spot.y });
+    this.state.ownedVehicles.add(ride.id);
+    this.pushHud();
+  }
+
   private contain(): void {
+    this.fenceCrossing();
     this.keepLand(this.player, this.map.playerSpawn);
     for (const ride of this.rides) {
       if (ride.kind === "boat") this.keepWater(ride);
@@ -377,31 +564,44 @@ export class CityScene extends Phaser.Scene {
   private bindKeys(): void {
     const keyboard = this.input.keyboard;
     if (!keyboard) throw new Error("Keyboard input is unavailable.");
-    keyboard.addCapture([
-      "W", "A", "S", "D", "E", "F", "R", "G", "M",
-      "UP", "DOWN", "LEFT", "RIGHT", "SHIFT", "ONE", "TWO", "THREE",
-    ]);
-    const code = Phaser.Input.Keyboard.KeyCodes;
-    this.keys = {
-      up: keyboard.addKey(code.W),
-      down: keyboard.addKey(code.S),
-      left: keyboard.addKey(code.A),
-      right: keyboard.addKey(code.D),
-      arrowUp: keyboard.addKey(code.UP),
-      arrowDown: keyboard.addKey(code.DOWN),
-      arrowLeft: keyboard.addKey(code.LEFT),
-      arrowRight: keyboard.addKey(code.RIGHT),
-      e: keyboard.addKey(code.E),
-      f: keyboard.addKey(code.F),
-      r: keyboard.addKey(code.R),
-      g: keyboard.addKey(code.G),
-      shift: keyboard.addKey(code.SHIFT),
-      m: keyboard.addKey(code.M),
-      food: [keyboard.addKey(code.ONE), keyboard.addKey(code.TWO), keyboard.addKey(code.THREE)],
+    this.onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const typing = target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
+      if (typing) return;
+      if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " "].includes(event.key)) event.preventDefault();
     };
+    window.addEventListener("keydown", this.onKeyDown);
+    const code = Phaser.Input.Keyboard.KeyCodes;
+    const key = (value: number) => keyboard.addKey(value, false);
+    this.keys = {
+      up: key(code.W),
+      down: key(code.S),
+      left: key(code.A),
+      right: key(code.D),
+      arrowUp: key(code.UP),
+      arrowDown: key(code.DOWN),
+      arrowLeft: key(code.LEFT),
+      arrowRight: key(code.RIGHT),
+      e: key(code.E),
+      f: key(code.F),
+      r: key(code.R),
+      g: key(code.G),
+      shift: key(code.SHIFT),
+      m: key(code.M),
+      esc: key(code.ESC),
+      food: [key(code.ONE), key(code.TWO), key(code.THREE)],
+    };
+    keyboard.clearCaptures();
+  }
+
+  private typing(): boolean {
+    const target = document.activeElement;
+    if (!(target instanceof HTMLElement)) return false;
+    return target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable;
   }
 
   private readInput(): MoveInput {
+    if (this.typing()) return { up: false, down: false, left: false, right: false };
     return {
       up: this.keys.up.isDown || this.keys.arrowUp.isDown,
       down: this.keys.down.isDown || this.keys.arrowDown.isDown,
@@ -442,6 +642,11 @@ export class CityScene extends Phaser.Scene {
 
   private handleActions(): void {
     const just = Phaser.Input.Keyboard.JustDown;
+    if (this.typing()) return;
+    if (just(this.keys.esc)) {
+      gameBus.emit("menu");
+      return;
+    }
     if (just(this.keys.m)) gameBus.emit("map-toggle");
     if (just(this.keys.g)) this.eatFood();
     if (this.riding) {
@@ -593,8 +798,12 @@ export class CityScene extends Phaser.Scene {
     if (!ride) return;
     ride.park();
     if (ride.kind === "boat") {
-      const pier = this.map.pierZone;
-      this.player.setPosition(pier.x + pier.w / 2, pier.y + pier.h / 2);
+      const shore = this.nearestLand(ride.x, ride.y);
+      if (shore) this.player.setPosition(shore.x, shore.y);
+      else {
+        const pier = this.map.pierZone;
+        this.player.setPosition(pier.x + pier.w / 2, pier.y + pier.h / 2);
+      }
     } else {
       const side = ride.heading;
       const spots = [1, -1].map((sign) => ({
@@ -835,7 +1044,7 @@ export class CityScene extends Phaser.Scene {
     for (const id of profile.businesses) this.state.ownedBusinesses.add(id);
     this.state.ownedVehicles.clear();
     for (const ride of this.rides) {
-      ride.owned = profile.vehicles.includes(ride.id);
+      ride.owned = ride.id === "yacht" || profile.vehicles.includes(ride.id);
       ride.stolen = false;
       ride.refreshLabel();
       if (ride.owned) this.state.ownedVehicles.add(ride.id);

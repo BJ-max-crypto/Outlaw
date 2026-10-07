@@ -1,6 +1,12 @@
 import Phaser from "phaser";
 import { CityScene } from "./scenes/CityScene";
 
+let active: Phaser.Game | null = null;
+
+export function currentGame(): Phaser.Game | null {
+  return active;
+}
+
 export function createGame(parent: HTMLElement): Phaser.Game {
   const game = new Phaser.Game({
     type: Phaser.AUTO,
@@ -23,6 +29,7 @@ export function createGame(parent: HTMLElement): Phaser.Game {
     input: { keyboard: true },
   });
 
+  active = game;
   if (process.env.NODE_ENV !== "production") {
     (window as Window & { __RUNOUT__?: Phaser.Game }).__RUNOUT__ = game;
   }

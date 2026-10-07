@@ -101,7 +101,6 @@ export function buildCityMap(): CityMap {
       { id: "skiff", kind: "boat", texture: "boat-white", ...at(1024, 392), heading: 0, name: "SKIFF", speed: 280, price: 0 },
       { id: "launch", kind: "boat", texture: "boat-wood", ...at(1184, 448), heading: 0.4, name: "LAUNCH", speed: 300, price: 0 },
       { id: "rib", kind: "boat", texture: "boat-black", ...at(1076, 304), heading: -0.2, name: "RIB", speed: 320, price: 0 },
-      { id: "yacht", kind: "boat", texture: "boat-deck", ...at(1032, 352), heading: 0.15, name: "YACHT", speed: 290, price: 0 },
     ],
     playerSpawn: at(500, 440),
     carCurb: at(336, 805),

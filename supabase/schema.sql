@@ -10,3 +10,44 @@ create table if not exists public.profiles (
 );
 
 alter table public.profiles enable row level security;
+
+alter table public.profiles add column if not exists username text;
+alter table public.profiles alter column cash type bigint;
+
+create table if not exists public.sessions (
+  code text primary key,
+  host_id text not null,
+  status text not null default 'lobby',
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.session_members (
+  code text not null references public.sessions (code) on delete cascade,
+  player_id text not null,
+  username text not null,
+  cash bigint not null default 40,
+  businesses text[] not null default '{}',
+  reinforcements integer not null default 0,
+  boat boolean not null default false,
+  employed boolean not null default false,
+  primary key (code, player_id)
+);
+
+create table if not exists public.session_holdings (
+  code text not null,
+  island_id text not null,
+  held_by text not null,
+  primary key (code, island_id)
+);
+
+create table if not exists public.shop_claims (
+  id bigint generated always as identity primary key,
+  player_id text not null,
+  reward_id text not null,
+  granted_at timestamptz not null default now()
+);
+
+alter table public.sessions enable row level security;
+alter table public.session_members enable row level security;
+alter table public.session_holdings enable row level security;
+alter table public.shop_claims enable row level security;

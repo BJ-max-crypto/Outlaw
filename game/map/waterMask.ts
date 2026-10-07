@@ -21,7 +21,37 @@ export function isWaterPixel(x: number, y: number): boolean {
   return grid()[cy * MASK_SIZE + cx] === 1;
 }
 
-/** World coordinate. The island image is painted at MAP_SCALE. */
+const WORLD_SPAN = SOURCE_SIZE * MAP_SCALE;
+let islandOrigins: { x: number; y: number }[] = [{ x: 0, y: 0 }];
+
+/** Extra copies of the island sit across the ocean in a multiplayer session. */
+export function setIslandOrigins(origins: { x: number; y: number }[]): void {
+  islandOrigins = origins.length > 0 ? origins : [{ x: 0, y: 0 }];
+}
+
+export function islandOriginsNow(): { x: number; y: number }[] {
+  return islandOrigins;
+}
+
+/** World coordinate. Off every island counts as water. */
 export function isWaterWorld(x: number, y: number): boolean {
-  return isWaterPixel(x / MAP_SCALE, y / MAP_SCALE);
+  for (const origin of islandOrigins) {
+    const localX = x - origin.x;
+    const localY = y - origin.y;
+    if (localX < 0 || localY < 0 || localX >= WORLD_SPAN || localY >= WORLD_SPAN) continue;
+    return isWaterPixel(localX / MAP_SCALE, localY / MAP_SCALE);
+  }
+  return true;
+}
+
+/** Index of the island whose land the point is standing on, or null in open water. */
+export function landIslandIndex(x: number, y: number): number | null {
+  for (let index = 0; index < islandOrigins.length; index += 1) {
+    const origin = islandOrigins[index];
+    const localX = x - origin.x;
+    const localY = y - origin.y;
+    if (localX < 0 || localY < 0 || localX >= WORLD_SPAN || localY >= WORLD_SPAN) continue;
+    if (!isWaterPixel(localX / MAP_SCALE, localY / MAP_SCALE)) return index;
+  }
+  return null;
 }
