@@ -50,6 +50,7 @@ export class CityScene extends Phaser.Scene {
   private lastProgress = -1;
   private lastPrompt: string | null = null;
   private gasEmpty = false;
+  private wasOnShift = false;
   private bannerToken = 0;
   private robReadyAt = new Map<string, number>();
   private peers = new Map<string, { sprite: Phaser.GameObjects.Sprite; label: Phaser.GameObjects.Text }>();
@@ -140,6 +141,8 @@ export class CityScene extends Phaser.Scene {
     this.stockOpen = false;
     this.groceryOpen = false;
     this.groceryDismissed = false;
+    this.gasEmpty = false;
+    this.wasOnShift = false;
     this.viewZoom = 1.52;
     this.lastPinch = 0;
     this.hasBoat = false;
@@ -297,7 +300,10 @@ export class CityScene extends Phaser.Scene {
       this.state.earningsScale = 1;
     }
     this.drainEnergy(delta, input);
-    const pay = this.state.tickIncome(delta);
+    const onShift = this.state.employed && this.inJob();
+    if (this.wasOnShift && !onShift) this.popup(this.player.x, this.player.y - 28, "OFF THE CLOCK", "#f4f1ea");
+    this.wasOnShift = onShift;
+    const pay = this.state.tickIncome(delta, onShift);
     if (pay > 0) this.popup(this.player.x, this.player.y - 36, `+$${pay}`, "#d7c08a");
     this.tickMarket(delta);
     if (this.stockOpen && !this.inStock()) this.closeStocks();
@@ -1186,13 +1192,14 @@ export class CityScene extends Phaser.Scene {
 
   private hint(): string {
     if (this.state.wanted > 0) return "Last a minute and a half and the cops break off. A bust cuts your cash in half.";
-    if (this.state.employed) return "Shift pay is on wherever you go.";
+    if (this.inJob() && this.state.employed) return "Shift pay is on while you stay at the port.";
+    if (this.state.employed) return "Walk back into the port to pick the wage up again.";
     return "Drive or steal a ride, clock in at the port, or invest on the stock floor.";
   }
 
   private pushHud(): void {
     this.state.health = this.player.health;
-    const snapshot = this.state.snapshot(this.hint());
+    const snapshot = this.state.snapshot(this.hint(), this.state.employed && this.inJob());
     if (this.riding) {
       snapshot.driving = true;
       snapshot.gas = this.riding.gas;
@@ -1205,6 +1212,7 @@ export class CityScene extends Phaser.Scene {
       snapshot.wanted,
       snapshot.food,
       snapshot.employed,
+      snapshot.onShift ? 1 : 0,
       snapshot.objective,
       snapshot.driving ? 1 : 0,
       Math.round(snapshot.gas),

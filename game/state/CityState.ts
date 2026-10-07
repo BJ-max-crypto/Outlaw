@@ -66,10 +66,10 @@ export class CityState {
     return true;
   }
 
-  /** Wages follow you after you clock in. Business income has its own timer. */
-  tickIncome(delta: number): number {
+  /** Wages pay only while you are standing in the job. Business income has its own timer. */
+  tickIncome(delta: number, onShift: boolean): number {
     let pay = 0;
-    if (this.incomeFrozen || !this.employed) {
+    if (this.incomeFrozen || !this.employed || !onShift) {
       this.jobMs = 0;
     } else {
       this.jobMs += delta;
@@ -92,7 +92,7 @@ export class CityState {
     return pay;
   }
 
-  snapshot(objective: string): HudSnapshot {
+  snapshot(objective: string, onShift = false): HudSnapshot {
     return {
       cash: this.cash,
       health: this.health,
@@ -104,6 +104,7 @@ export class CityState {
       objective,
       food: this.food.length,
       employed: this.employed,
+      onShift,
       driving: false,
       gas: 0,
       maxGas: 100,

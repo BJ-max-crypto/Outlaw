@@ -54,7 +54,7 @@ export default function Hud({ hud, prompt, robbery, banner, escapeMs, map, pos, 
           ))}
         </div>
         <p className="mt-4 text-[11px] font-medium tracking-[0.14em] text-[#d9d3c7]">
-          {hud.employed ? "ON SHIFT" : "NO JOB"} · FOOD {hud.food}
+          {hud.onShift ? "ON SHIFT" : hud.employed ? "CLOCKED IN" : "NO JOB"} · FOOD {hud.food}
         </p>
       </section>
 

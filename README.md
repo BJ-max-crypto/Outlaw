@@ -1,6 +1,6 @@
 # Runout
 
-An open island you can keep playing. Drive or steal a car, take a boat from the dock, clock in at the port, and the wages follow you. Each stock on the desk has its own chart. When the cops come, survive for a minute and a half and they break off. Getting arrested cuts your cash in half. There are no rounds.
+An open island you can keep playing. Drive or steal a car, take a boat from the dock, and clock in at the port. The wage pays only while you stay there. Each stock on the desk has its own chart. When the cops come, survive for a minute and a half and they break off. Getting arrested cuts your cash in half. There are no rounds.
 
 ## Run
 
@@ -19,7 +19,7 @@ Open [http://localhost:3000](http://localhost:3000).
 - **F** steals a car. Buying or stealing drops it on the road just outside the dealership and puts you in the seat. A car stays still until you release the keys and accelerate. **F** gets you out.
 - Driving burns gas. The gas bar shows what is left. An empty tank coasts to a stop until you pay to refill.
 - Every road is open. Only the building walls block you, and each door faces the road.
-- After you clock in, shift pay continues anywhere on the island.
+- After you clock in, shift pay runs only while you are at the port. Leaving stops the wage. Walk back in and it starts again.
 - A chase lasts 90 seconds. The timer at the top is how long until the cops quit.
 - **Hold R** inside a business you do not own to rob the register.
 - Walk into the grocery and the counter opens. Buy a taco, burger, or drink there. **G** eats what you are carrying and restores energy.

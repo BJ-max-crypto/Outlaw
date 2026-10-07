@@ -9,6 +9,7 @@ export type HudSnapshot = {
   objective: string;
   food: number;
   employed: boolean;
+  onShift: boolean;
   driving: boolean;
   gas: number;
   maxGas: number;

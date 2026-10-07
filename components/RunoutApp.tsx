@@ -32,6 +32,7 @@ const initialHud: HudSnapshot = {
   objective: "Drive or steal a ride, clock in at the port, or invest on the stock floor.",
   food: 0,
   employed: false,
+  onShift: false,
   driving: false,
   gas: 0,
   maxGas: 100,
