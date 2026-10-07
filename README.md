@@ -41,7 +41,7 @@ Multiplayer opens an invite code. Friends join with that code, and the host pres
 
 ## Shop
 
-A rewarded shop can double earnings for 30 or 60 seconds, or grant a small cash stake. The buttons stay hidden until Google Adsense is connected (`SHOP_VISIBLE` in `lib/shop/rewards.ts`). The grant route is already live: `POST /api/shop` with `{ "rewardId": "double-earnings" | "overtime" | "stake" }`.
+The AdSense loader is in the site head on every page (`app/layout.tsx`, publisher `ca-pub-8078670301082619`). A rewarded shop can double earnings for 30 or 60 seconds, or grant a small cash stake. Those buttons stay hidden until a finished ad can grant the reward (`SHOP_VISIBLE` in `lib/shop/rewards.ts`). The grant route is already live: `POST /api/shop` with `{ "rewardId": "double-earnings" | "overtime" | "stake" }`.
 
 ## Online
 
