@@ -6,6 +6,7 @@ import {
   joinSession,
   leading,
   readSession,
+  reportMove,
   startSession,
   syncMember,
 } from "@/lib/server/world";
@@ -19,6 +20,12 @@ type Body = {
   targetId?: string;
   businesses?: string[];
   employed?: boolean;
+  islandId?: string;
+  x?: number;
+  y?: number;
+  fromId?: string;
+  toId?: string;
+  along?: number;
 };
 
 export async function GET(request: Request) {
@@ -39,14 +46,29 @@ export async function POST(request: Request) {
     return Response.json({ ok: true, session: await createSession(id, username) });
   }
   if (body.action === "join") {
-    const session = await joinSession(body.code ?? "", id, username);
-    if (!session) return Response.json({ ok: false, reason: "code" }, { status: 404 });
-    return Response.json({ ok: true, session });
+    const result = await joinSession(body.code ?? "", id, username);
+    if ("error" in result) {
+      const status = result.error === "started" ? 409 : result.error === "full" ? 409 : 404;
+      return Response.json({ ok: false, reason: result.error }, { status });
+    }
+    return Response.json({ ok: true, session: result.session });
   }
   if (body.action === "start") {
     const session = await startSession(body.code ?? "", id);
     if (!session) return Response.json({ ok: false, reason: "host" }, { status: 403 });
     return Response.json({ ok: true, session });
+  }
+  if (body.action === "move") {
+    const places = await reportMove(body.code ?? "", id, username, {
+      islandId: body.islandId ?? "",
+      x: Number(body.x),
+      y: Number(body.y),
+      fromId: body.fromId ?? "",
+      toId: body.toId ?? "",
+      along: Number(body.along),
+    });
+    if (!places) return Response.json({ ok: false }, { status: 404 });
+    return Response.json({ ok: true, places });
   }
   if (body.action === "sync") {
     const session = await syncMember(body.code ?? "", id, {

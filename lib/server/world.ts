@@ -18,11 +18,23 @@ export type Account = {
   stakeCredit?: number;
 };
 
+export type LivePlace = {
+  name: string;
+  islandId: string;
+  x: number;
+  y: number;
+  fromId: string;
+  toId: string;
+  along: number;
+  at: number;
+};
+
 export type SessionState = {
   code: string;
   hostId: string;
   status: "lobby" | "live";
   members: IslandCard[];
+  places: Record<string, LivePlace>;
 };
 
 const store = globalThis as typeof globalThis & {
@@ -75,6 +87,7 @@ export function sessionFromRows(
       employed: Boolean(member.employed),
       heldBy: held.get(member.player_id) ?? member.player_id,
     })),
+    places: {},
   };
 }
 
@@ -212,20 +225,33 @@ export async function createSession(id: string, username: string): Promise<Sessi
     hostId: id,
     status: "lobby",
     members: [blankMember(id, username)],
+    places: {},
   };
   persistSession(session);
   return session;
 }
 
-export async function joinSession(codeValue: string, id: string, username: string): Promise<SessionState | null> {
+export async function joinSession(
+  codeValue: string,
+  id: string,
+  username: string,
+): Promise<{ session: SessionState } | { error: "missing" | "started" | "full" }> {
   const session = await loadSession(codeValue);
-  if (!session || session.status !== "lobby") return null;
-  if (!session.members.some((member) => member.id === id)) {
-    if (session.members.length >= 4) return null;
-    session.members.push(blankMember(id, username));
+  if (!session) return { error: "missing" };
+  const name = username.trim().slice(0, 16);
+  const existing = session.members.find((member) => member.id === id);
+  if (session.status === "live") {
+    if (!existing) return { error: "started" };
+    if (name.length >= 2) existing.username = name;
+    return { session };
   }
-  persistSession(session);
-  return session;
+  if (session.status !== "lobby") return { error: "missing" };
+  if (!existing) {
+    if (session.members.length >= 4) return { error: "full" };
+    session.members.push(blankMember(id, name || "PLAYER"));
+    persistSession(session);
+  }
+  return { session };
 }
 
 export async function startSession(codeValue: string, id: string): Promise<SessionState | null> {
@@ -238,6 +264,34 @@ export async function startSession(codeValue: string, id: string): Promise<Sessi
 
 export async function readSession(codeValue: string): Promise<SessionState | null> {
   return loadSession(codeValue);
+}
+
+export async function reportMove(
+  codeValue: string,
+  id: string,
+  username: string,
+  spot: { islandId: string; x: number; y: number; fromId: string; toId: string; along: number },
+): Promise<{ id: string; name: string; islandId: string; x: number; y: number; fromId: string; toId: string; along: number; at: number }[] | null> {
+  const session = await loadSession(codeValue);
+  if (!session || session.status !== "live") return null;
+  const member = session.members.find((item) => item.id === id);
+  if (!member) return null;
+  session.places ??= {};
+  const name = member.username || username || "PLAYER";
+  session.places[id] = {
+    name,
+    islandId: spot.islandId,
+    x: Number.isFinite(spot.x) ? spot.x : 0,
+    y: Number.isFinite(spot.y) ? spot.y : 0,
+    fromId: spot.fromId || spot.islandId,
+    toId: spot.toId || spot.islandId,
+    along: Number.isFinite(spot.along) ? spot.along : -1,
+    at: Date.now(),
+  };
+  const now = Date.now();
+  return Object.entries(session.places)
+    .filter(([player, place]) => player !== id && now - place.at < 2500)
+    .map(([player, place]) => ({ id: player, ...place }));
 }
 
 export async function syncMember(

@@ -1,7 +1,10 @@
 import type { HudSnapshot } from "@/lib/game/types";
 import { businessTick, businessValue, itemById, netWorth, portfolioValue } from "@/lib/economy/model";
-import { TUNING } from "@/game/tuning";
-import type { FoodItem } from "@/game/world/catalog";
+import { formatStreak, payStreakMultiplier, TUNING } from "@/game/tuning";
+import { businessById, type FoodItem } from "@/game/world/catalog";
+
+export type PaydayPart = { label: string; amount: number; tone: "job" | "business" | "island" };
+export type Payday = { total: number; parts: PaydayPart[] };
 
 export class CityState {
   cash: number;
@@ -29,6 +32,9 @@ export class CityState {
   incomeFrozen = false;
   /** Ad reward scale. 2 doubles every earning until it expires. */
   earningsScale = 1;
+  /** Paychecks landed without leaving the port. The wage climbs with this and dies when you step out. */
+  shiftTicks = 0;
+  shiftEarned = 0;
   /** Garage, safe, and loan debt. The server is the source of this number. */
   extraWorth = 0;
 
@@ -155,30 +161,47 @@ export class CityState {
     return sold;
   }
 
-  /** Wages pay only while you are standing in the job. Business income has its own timer. */
-  tickIncome(delta: number, onShift: boolean): number {
-    let pay = 0;
+  /** Dollars per minute the port is paying right now. The next paycheck is one step higher until the cap. */
+  shiftRate(): number {
+    const mult = payStreakMultiplier(Math.max(1, this.shiftTicks));
+    return Math.round(TUNING.jobPay * mult * this.earningsScale) * 15;
+  }
+
+  /** Wages pay only while you are standing in the job. Each paycheck on the clock pays more, up to the cap. */
+  tickIncome(delta: number, onShift: boolean): Payday {
+    const parts: PaydayPart[] = [];
     if (this.incomeFrozen || !this.employed || !onShift) {
       this.jobMs = 0;
+      this.shiftTicks = 0;
+      this.shiftEarned = 0;
     } else {
       this.jobMs += delta;
       if (this.jobMs >= TUNING.jobIntervalMs) {
         this.jobMs -= TUNING.jobIntervalMs;
-        pay += TUNING.jobPay;
+        this.shiftTicks += 1;
+        const mult = payStreakMultiplier(this.shiftTicks);
+        const amount = Math.round(TUNING.jobPay * mult * this.earningsScale);
+        this.shiftEarned += amount;
+        parts.push({ label: `SHIFT ×${formatStreak(mult)}`, amount, tone: "job" });
       }
     }
     this.bizMs += delta;
     if (this.bizMs >= TUNING.jobIntervalMs) {
       this.bizMs -= TUNING.jobIntervalMs;
+      const scale = this.earningsScale;
       if (!this.incomeFrozen) {
-        for (const id of this.ownedBusinesses) pay += businessTick(id, this.levelOf(id), this.incomeScale);
+        for (const id of this.ownedBusinesses) {
+          const amount = Math.round(businessTick(id, this.levelOf(id), this.incomeScale) * scale);
+          if (amount > 0) parts.push({ label: businessById(id)?.name ?? "STORE", amount, tone: "business" });
+        }
       }
-      pay += this.islandPay;
+      const islands = Math.round(this.islandPay * scale);
+      if (islands > 0) parts.push({ label: "ISLANDS", amount: islands, tone: "island" });
     }
-    pay = Math.round(pay * this.earningsScale);
-    if (pay <= 0) return 0;
-    this.cash += pay;
-    return pay;
+    const total = parts.reduce((sum, part) => sum + part.amount, 0);
+    if (total <= 0) return { total: 0, parts: [] };
+    this.cash += total;
+    return { total, parts };
   }
 
   snapshot(objective: string, onShift = false): HudSnapshot {
@@ -200,6 +223,12 @@ export class CityState {
       businesses: [...this.ownedBusinesses],
       vehicles: [...this.ownedVehicles],
       netWorth: this.cash,
+      shiftTicks: onShift ? this.shiftTicks : 0,
+      shiftEarned: onShift ? this.shiftEarned : 0,
+      shiftRate: onShift && this.employed ? this.shiftRate() : 0,
+      lure: "",
+      lureReady: false,
+      lureHot: false,
     };
   }
 }

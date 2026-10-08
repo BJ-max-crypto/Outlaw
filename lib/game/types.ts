@@ -16,6 +16,14 @@ export type HudSnapshot = {
   businesses: string[];
   vehicles: string[];
   netWorth: number;
+  /** Paychecks landed this visit to the port. 0 means the wage is paused. */
+  shiftTicks: number;
+  shiftEarned: number;
+  /** Dollars per minute at the current streak, before the next climb. */
+  shiftRate: number;
+  lure: string;
+  lureReady: boolean;
+  lureHot: boolean;
 };
 
 export type MapMarker = {

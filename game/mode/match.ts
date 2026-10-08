@@ -54,6 +54,56 @@ export function islandOrigin(index: number): { x: number; y: number } {
   return { x: col * (ISLAND_SPAN + ISLAND_GAP), y: row * (ISLAND_SPAN + ISLAND_GAP) };
 }
 
+export type SharedSpot = {
+  islandId: string;
+  x: number;
+  y: number;
+  fromId: string;
+  toId: string;
+  along: number;
+};
+
+function islandCenter(index: number): { x: number; y: number } {
+  const origin = islandOrigin(index);
+  return { x: origin.x + ISLAND_SPAN / 2, y: origin.y + ISLAND_SPAN / 2 };
+}
+
+/** Where this player is, in a form every other client can place on their own map. */
+export function shareSpot(x: number, y: number, islands: { id: string }[]): SharedSpot {
+  for (let index = 0; index < islands.length; index += 1) {
+    const origin = islandOrigin(index);
+    const inside = x >= origin.x && y >= origin.y && x <= origin.x + ISLAND_SPAN && y <= origin.y + ISLAND_SPAN;
+    if (!inside) continue;
+    const id = islands[index].id;
+    return { islandId: id, x: x - origin.x, y: y - origin.y, fromId: id, toId: id, along: -1 };
+  }
+  const centers = islands.map((island, index) => ({ id: island.id, ...islandCenter(index) }));
+  centers.sort((a, b) => (a.x - x) ** 2 + (a.y - y) ** 2 - ((b.x - x) ** 2 + (b.y - y) ** 2));
+  const from = centers[0];
+  const to = centers[1] ?? from;
+  if (!from) return { islandId: "", x, y, fromId: "", toId: "", along: -1 };
+  const abx = to.x - from.x;
+  const aby = to.y - from.y;
+  const length = abx * abx + aby * aby || 1;
+  const along = Math.max(0, Math.min(1, ((x - from.x) * abx + (y - from.y) * aby) / length));
+  return { islandId: from.id, x: 0, y: 0, fromId: from.id, toId: to.id, along };
+}
+
+/** Place a shared spot onto this client's island layout. */
+export function viewSpot(spot: SharedSpot, islands: { id: string }[]): { x: number; y: number } {
+  const indexOf = (id: string) => {
+    const index = islands.findIndex((island) => island.id === id);
+    return index < 0 ? 0 : index;
+  };
+  if (spot.along < 0 || spot.fromId === spot.toId) {
+    const origin = islandOrigin(indexOf(spot.islandId));
+    return { x: origin.x + spot.x, y: origin.y + spot.y };
+  }
+  const from = islandCenter(indexOf(spot.fromId));
+  const to = islandCenter(indexOf(spot.toId));
+  return { x: from.x + (to.x - from.x) * spot.along, y: from.y + (to.y - from.y) * spot.along };
+}
+
 /** Singleplayer starts on one island. The other three are for sale across the water. */
 export function saleIslands(playerId: string, username: string): IslandCard[] {
   const home: IslandCard = {

@@ -1,3 +1,4 @@
+import { formatStreak, payStreakMultiplier } from "@/game/tuning";
 import { formatCash } from "@/lib/game/format";
 import type { HudSnapshot, MapSnapshot, WorldPos } from "@/lib/game/types";
 import MiniMap from "./MiniMap";
@@ -43,10 +44,15 @@ export default function Hud({ hud, prompt, robbery, banner, escapeMs, map, pos, 
 
       <section className="absolute left-4 top-4 w-56 rounded-2xl border border-white/10 bg-[#17191e]/92 p-4 shadow-xl">
         <p className="text-[10px] font-medium tracking-[0.28em] text-[#a39e94]">CASH</p>
-        <p key={hud.cash} className="pop font-display mt-1 text-5xl leading-none text-[#d7c08a]">
+        <p key={hud.cash} className="cash-tick font-display mt-1 text-5xl leading-none text-[#ffd56a]">
           {formatCash(hud.cash)}
         </p>
         <p className="mt-1 text-[10px] tracking-[0.16em] text-[#a39e94]">NET WORTH {formatCash(hud.netWorth)}</p>
+        {hud.lure && (
+          <p className={`mt-2 text-[11px] font-semibold tracking-[0.08em] ${hud.lureReady ? "text-[#7dcea0]" : "text-[#ffd56a]"} ${hud.lureHot ? "lure-hot" : ""}`}>
+            {hud.lureReady ? `READY · ${hud.lure}` : `NEXT · ${hud.lure}`}
+          </p>
+        )}
         {hud.driving && (
           <Meter label="GAS" value={Math.max(0, Math.min(100, (hud.gas / hud.maxGas) * 100))} color={hud.gas / hud.maxGas < 0.2 ? "#e25b2a" : "#e2b34a"} />
         )}
@@ -59,8 +65,24 @@ export default function Hud({ hud, prompt, robbery, banner, escapeMs, map, pos, 
           ))}
         </div>
         <p className="mt-4 text-[11px] font-medium tracking-[0.14em] text-[#d9d3c7]">
-          {hud.onShift ? "ON SHIFT" : hud.employed ? "CLOCKED IN" : "NO JOB"} · FOOD {hud.food}
+          {hud.onShift ? "ON SHIFT" : hud.employed ? "WAGE STOPPED" : "NO JOB"} · FOOD {hud.food}
         </p>
+        {hud.onShift && (
+          <div className="mt-2">
+            <div className="flex items-center justify-between text-[10px] tracking-[0.16em] text-[#ffd56a]">
+              <span>{formatCash(hud.shiftRate)}/MIN</span>
+              <span>×{formatStreak(payStreakMultiplier(Math.max(1, hud.shiftTicks)))}</span>
+            </div>
+            <div className="mt-1 flex gap-1" aria-label={`Shift streak ${hud.shiftTicks}`}>
+              {Array.from({ length: 7 }, (_, index) => (
+                <div key={index} className={`h-1.5 flex-1 rounded-full ${index < hud.shiftTicks ? "bg-[#ffd56a]" : "bg-white/10"}`} />
+              ))}
+            </div>
+            <p className="mt-1 text-[10px] tracking-[0.12em] text-[#a39e94]">
+              {hud.shiftTicks >= 7 ? `MAX · THIS SHIFT ${formatCash(hud.shiftEarned)}` : `THIS SHIFT ${formatCash(hud.shiftEarned)}`}
+            </p>
+          </div>
+        )}
         <div className="mt-3 flex gap-1">
           <PanelButton label="GOALS" onClick={() => onPanel("goals")} />
           <PanelButton label="PROFILE" onClick={() => onPanel("profile")} />

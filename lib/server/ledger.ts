@@ -303,7 +303,7 @@ export function syncReported(account: Account, report: Report, now = Date.now())
     } else {
       const minutes = gap / 60_000;
       const scale = account.rewardUntil && account.rewardUntil > now ? Math.min(2, account.rewardScale ?? 1) : 1;
-      const job = report.onShift && account.employed ? TUNING.jobPay * 15 * minutes * scale : 0;
+      const job = report.onShift && account.employed ? TUNING.jobPay * 15 * minutes * scale * TUNING.payStreakCap : 0;
       const business = businessMinutes(data, incomeScaleFor(now)) * minutes * scale;
       const island = heldPayPerMinute(account.id) * minutes * scale;
       const robbery = now - data.robberyAt >= ROBBERY_GAP_MS ? ROBBERY_GRANT : 0;
@@ -411,7 +411,7 @@ export async function postEconomy(
     const data = economyOf(account, now);
     const owned = data.shares[stockId] ?? 0;
     if ((body.side ?? "buy") === "buy") {
-      const cost = quote.price * quantity;
+      const cost = Math.round(quote.price * quantity);
       if (account.cash < cost) return fail("NEED CASH");
       account.cash -= cost;
       data.shares[stockId] = owned + quantity;
@@ -422,7 +422,7 @@ export async function postEconomy(
       if (sold <= 0) return fail("NO SHARES");
       const basis = data.basis[stockId] ?? 0;
       const average = owned > 0 ? basis / owned : 0;
-      const proceeds = quote.price * sold;
+      const proceeds = Math.round(quote.price * sold);
       data.stockProfit += proceeds - average * sold;
       data.shares[stockId] = owned - sold;
       data.basis[stockId] = Math.max(0, basis - average * sold);

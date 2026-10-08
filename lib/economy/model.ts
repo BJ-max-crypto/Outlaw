@@ -82,8 +82,8 @@ export const OBJECTIVE_POOL: ObjectiveTemplate[] = [
 export type WorldEvent = { id: string; name: string; detail: string; claimable: boolean };
 
 const EVENTS: WorldEvent[] = [
-  { id: "boom", name: "MARKET BOOM", detail: "Every stock is up 12% until this passes.", claimable: false },
-  { id: "crash", name: "MARKET CRASH", detail: "Every stock is down 7%. Insured businesses keep their pay.", claimable: false },
+  { id: "boom", name: "MARKET BOOM", detail: "Stocks jump 12% and keep trading from there.", claimable: false },
+  { id: "crash", name: "MARKET CRASH", detail: "Stocks drop 7%. Insured businesses keep their pay.", claimable: false },
   { id: "shipment", name: "PORT SHIPMENT", detail: "Claim a payout at the port.", claimable: true },
   { id: "refund", name: "TAX REFUND", detail: "A cash refund is waiting.", claimable: true },
   { id: "rush", name: "BUSINESS BOOM", detail: "Owned businesses pay double for now.", claimable: false },
@@ -181,8 +181,8 @@ export function stockVolatility(id: string): number {
   return VOLATILITY[id] ?? 0.04;
 }
 
-const QUOTE_TICK_MS = 3000;
-const QUOTE_HISTORY = 28;
+const QUOTE_TICK_MS = 8_000;
+const QUOTE_HISTORY = 36;
 
 function quoteSalt(id: string): number {
   let n = 2166136261;
@@ -202,20 +202,83 @@ function quoteUnit(tick: number, id: string): number {
   return x / 4294967296;
 }
 
+/** One-time news move at the first tick of a boom or crash. Later ticks keep trading from that price. */
+function eventShock(tick: number): number {
+  if (tick <= 0) return 1;
+  const now = tick * QUOTE_TICK_MS;
+  const id = currentEvent(now).id;
+  const before = currentEvent(now - QUOTE_TICK_MS).id;
+  if (id === before) return 1;
+  if (id === "boom") return 1.12;
+  if (id === "crash") return 0.93;
+  return 1;
+}
+
+/** Next price in a shared random walk. It pulls back toward the listed price so a day of ticks cannot run away. */
+function stepQuote(id: string, listed: number, tick: number, price: number): number {
+  const vol = stockVolatility(id) / 0.045;
+  const shock = (quoteUnit(tick, id) - 0.5) * 2 * 0.02 * vol;
+  const pull = 0.08 * ((listed - price) / listed);
+  const next = price * (1 + pull + shock) * eventShock(tick);
+  return Math.min(listed * 2.4, Math.max(listed * 0.4, next));
+}
+
+type QuoteWalk = { dayTick: number; tick: number; series: Record<string, number[]> };
+
+let quoteWalk: QuoteWalk | null = null;
+
+function dayOpenTick(now: number): number {
+  const date = new Date(now);
+  const start = Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
+  return Math.floor(start / QUOTE_TICK_MS);
+}
+
+function remember(points: number[], price: number): void {
+  points.push(price);
+  if (points.length > QUOTE_HISTORY) points.shift();
+}
+
+/** Today's path for every stock. Same clock, same prices, no matter who is online. */
+function quoteBook(now: number): QuoteWalk {
+  const tick = Math.floor(now / QUOTE_TICK_MS);
+  const dayTick = dayOpenTick(now);
+  if (!quoteWalk || quoteWalk.dayTick !== dayTick || tick < quoteWalk.tick) {
+    const series: Record<string, number[]> = {};
+    for (const stock of STOCKS) {
+      let price = stock.price;
+      const points = [price];
+      for (let cursor = dayTick + 1; cursor <= tick; cursor += 1) {
+        price = stepQuote(stock.id, stock.price, cursor, price);
+        remember(points, price);
+      }
+      series[stock.id] = points;
+    }
+    quoteWalk = { dayTick, tick, series };
+    return quoteWalk;
+  }
+  if (quoteWalk.tick < tick) {
+    for (const stock of STOCKS) {
+      const points = quoteWalk.series[stock.id];
+      let price = points[points.length - 1] ?? stock.price;
+      for (let cursor = quoteWalk.tick + 1; cursor <= tick; cursor += 1) {
+        price = stepQuote(stock.id, stock.price, cursor, price);
+        remember(points, price);
+      }
+    }
+    quoteWalk.tick = tick;
+  }
+  return quoteWalk;
+}
+
 /**
- * Price for one 3-second slot. It depends only on the clock and the stock,
- * not on events, earnings, or whether anyone is playing.
+ * Share prices follow the previous trade. A tick moves the price a little,
+ * and a boom or crash is a single jump that stays in the chart.
  */
 export function marketQuotes(now = Date.now()): QuoteState[] {
-  const tick = Math.floor(now / QUOTE_TICK_MS);
+  const book = quoteBook(now);
   return STOCKS.map((stock) => {
-    const history: number[] = [];
-    for (let age = QUOTE_HISTORY - 1; age >= 0; age -= 1) {
-      const swing = (quoteUnit(tick - age, stock.id) - 0.5) * 2;
-      const raw = stock.price * (1 + swing * stockVolatility(stock.id) * 4);
-      history.push(Math.round(Math.min(400, Math.max(8, raw))));
-    }
-    return { id: stock.id, name: stock.name, price: history[history.length - 1], history };
+    const history = (book.series[stock.id] ?? [stock.price]).map((price) => Math.round(price * 100) / 100);
+    return { id: stock.id, name: stock.name, price: history[history.length - 1] ?? stock.price, history };
   });
 }
 
@@ -232,15 +295,9 @@ export function incomeScaleFor(now: number, insured = false): number {
   return 1;
 }
 
-/** Clock price, then the shared world-event move. Same number for every player. */
+/** The traded price is the walked price. News shocks are already in that path. */
 export function tradedQuotes(now = Date.now()): QuoteState[] {
-  const id = currentEvent(now).id;
-  const factor = id === "boom" ? 1.12 : id === "crash" ? 0.93 : 1;
-  return marketQuotes(now).map((quote) => ({
-    ...quote,
-    price: Math.round(quote.price * factor),
-    history: quote.history.map((price, index) => (index === quote.history.length - 1 ? Math.round(price * factor) : price)),
-  }));
+  return marketQuotes(now);
 }
 
 export function rewardScaleFor(now: number): number {

@@ -15,7 +15,7 @@ import ShopButton from "@/components/hud/ShopButton";
 import WatchAdButton from "@/components/hud/WatchAdButton";
 import StockDesk from "@/components/hud/StockDesk";
 import { currentGame } from "@/game/createGame";
-import { getMatch, orderIslands, saleIslands, setMatch, setPendingProfile, type IslandCard } from "@/game/mode/match";
+import { getMatch, orderIslands, saleIslands, setMatch, setPendingProfile, shareSpot, viewSpot, type IslandCard, type SharedSpot } from "@/game/mode/match";
 import { primeAudio } from "@/game/audio/siren";
 import { TUNING } from "@/game/tuning";
 import type { RewardPayload } from "@/lib/ads/gptRewarded";
@@ -49,6 +49,12 @@ const initialHud: HudSnapshot = {
   businesses: [],
   vehicles: [],
   netWorth: TUNING.startingCash,
+  shiftTicks: 0,
+  shiftEarned: 0,
+  shiftRate: 0,
+  lure: "",
+  lureReady: false,
+  lureHot: false,
 };
 
 function boot(mode: "single" | "multi", session: SessionView | null, username: string, id: string): void {
@@ -116,6 +122,8 @@ export default function RunoutApp() {
   const tail = useRef(Promise.resolve());
   const hudAt = useRef(0);
   const playAt = useRef(0);
+  /** Stays true until the sync that covers a paycheck, so stepping out does not erase wages already earned. */
+  const worked = useRef(false);
   const postRef = useRef<(extra: Record<string, unknown>, quiet: boolean) => Promise<void>>(async () => undefined);
   const playMultiRef = useRef<(next: SessionView) => void>(() => undefined);
   const liveBoot = useRef("");
@@ -161,6 +169,7 @@ export default function RunoutApp() {
     const unsub = [
       gameBus.on("hud", (next) => {
         hudAt.current = Date.now();
+        if (next.onShift) worked.current = true;
         setHud(next);
       }),
       gameBus.on("prompt", setPrompt),
@@ -297,6 +306,48 @@ export default function RunoutApp() {
   }, [screen]);
 
   useEffect(() => {
+    if (screen !== "play" || mode !== "multi") return;
+    let stopped = false;
+    let busy = false;
+    const tick = async () => {
+      if (stopped || busy) return;
+      const match = getMatch();
+      if (match.mode !== "multi" || !match.code || match.islands.length < 2) return;
+      const here = posRef.current;
+      if (!here) return;
+      busy = true;
+      try {
+        const shared = shareSpot(here.x, here.y, match.islands);
+        const response = await fetch("/api/session", {
+          method: "POST",
+          headers: playerHeaders(playerId()),
+          body: JSON.stringify({ action: "move", code: match.code, username: usernameRef.current || match.username, ...shared }),
+        });
+        const data = (await response.json()) as { places?: (SharedSpot & { id: string; name: string; at: number })[] };
+        if (stopped || !data.places) return;
+        gameBus.emit(
+          "peers",
+          data.places.map((place) => {
+            const at = viewSpot(place, match.islands);
+            return { id: place.id, name: place.name, x: at.x, y: at.y, at: place.at };
+          }),
+        );
+      } catch {
+        /* The next tick tries again. */
+      } finally {
+        busy = false;
+      }
+    };
+    void tick();
+    const timer = window.setInterval(() => void tick(), 120);
+    return () => {
+      stopped = true;
+      window.clearInterval(timer);
+      gameBus.emit("peers", []);
+    };
+  }, [screen, mode]);
+
+  useEffect(() => {
     if (panel !== "ranks") return;
     void fetch(`/api/leaderboard?board=${board}`, { headers: playerHeaders(playerId()) })
       .then((response) => response.json())
@@ -339,10 +390,13 @@ export default function RunoutApp() {
 
   const postEconomy = (extra: Record<string, unknown>, quiet: boolean): Promise<void> => {
     const run = tail.current.then(async () => {
+      let clocked = false;
       try {
       const snap = wallet();
       const saved = readBlob(playerId());
       const economy = viewRef.current;
+      clocked = snap.onShift || worked.current;
+      worked.current = snap.onShift;
       const response = await fetch("/api/economy", {
         method: "POST",
         headers: playerHeaders(playerId()),
@@ -351,7 +405,7 @@ export default function RunoutApp() {
           cash: snap.cash,
           energy: snap.energy,
           employed: snap.employed,
-          onShift: snap.onShift,
+          onShift: clocked,
           businesses: snap.businesses,
           vehicles: snap.vehicles,
           levels: economy?.levels ?? saved?.levels,
@@ -395,6 +449,7 @@ export default function RunoutApp() {
       }
       if (!response.ok && !quiet) gameBus.emit("ledger-deny", data.reason ?? "NOT YET");
       } catch {
+        if (clocked) worked.current = true;
         if (!quiet) gameBus.emit("ledger-deny", "NOT YET");
       }
     });

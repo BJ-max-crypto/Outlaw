@@ -1,6 +1,7 @@
 const ID_KEY = "runout-player";
 const NAME_KEY = "runout-username";
 const SAVE_KEY = "runout-save";
+const SESSION_KEY = "runout-session";
 
 export function localPlayerId(): string {
   if (typeof window === "undefined") return "";
@@ -25,6 +26,23 @@ export function localUsername(playerId = ""): string {
 export function rememberUsername(username: string, playerId = ""): void {
   if (playerId) window.localStorage.setItem(`${NAME_KEY}:${playerId}`, username);
   if (!playerId.startsWith("user_")) window.localStorage.setItem(NAME_KEY, username);
+}
+
+export function rememberSession(code: string): void {
+  if (typeof window === "undefined") return;
+  const next = code.trim().toUpperCase();
+  if (!/^[A-Z0-9]{4}$/.test(next)) return;
+  window.localStorage.setItem(SESSION_KEY, next);
+}
+
+export function readSessionCode(): string {
+  if (typeof window === "undefined") return "";
+  return window.localStorage.getItem(SESSION_KEY) ?? "";
+}
+
+export function forgetSession(): void {
+  if (typeof window === "undefined") return;
+  window.localStorage.removeItem(SESSION_KEY);
 }
 
 export function playerHeaders(playerId = ""): HeadersInit {

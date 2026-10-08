@@ -1,24 +1,24 @@
 import Phaser from "phaser";
 import { gameBus } from "@/lib/game/bus";
 import type { CityProfile, Peer, SessionView } from "@/lib/game/types";
-import { Siren } from "@/game/audio/siren";
+import { coinChime, Siren } from "@/game/audio/siren";
 import { Player, type MoveInput } from "@/game/entities/Player";
 import { ShoreGuard } from "@/game/entities/ShoreGuard";
-import { createCopTextures, createPlayerTextures } from "@/game/entities/textures";
+import { createCopTextures, createPlayerTextures, playerTexture } from "@/game/entities/textures";
 import { Vehicle } from "@/game/entities/Vehicle";
 import { buildCityMap, closestSpawns, createWallBodies, paintCity, type PlacedBusiness } from "@/game/map/cityMap";
 import { rectContains } from "@/game/map/geometry";
 import { MAP_SCALE, isWaterWorld, landIslandIndex, setIslandOrigins } from "@/game/map/waterMask";
 import { getMatch, heldIncome, islandIncome, islandOrigin, ISLAND_SPAN, orderIslands, setMatch, takePendingProfile } from "@/game/mode/match";
 import type { EconomyView } from "@/lib/economy/model";
-import { businessPerMinute, marketQuotes, tradedQuotes } from "@/lib/economy/model";
+import { businessPerMinute, marketQuotes, tradedQuotes, upgradeCost } from "@/lib/economy/model";
 import { garageById, RACE_POINTS, type SocialView } from "@/lib/sandbox/catalog";
 import { formatCash } from "@/lib/game/format";
 import { CityState } from "@/game/state/CityState";
 import { PoliceDirector } from "@/game/systems/PoliceDirector";
 import { RobberySystem } from "@/game/systems/RobberySystem";
 import { WantedSystem } from "@/game/systems/WantedSystem";
-import { TUNING } from "@/game/tuning";
+import { formatStreak, payStreakMultiplier, TUNING } from "@/game/tuning";
 import { businessById, FOODS, type FoodItem, type MarketQuote } from "@/game/world/catalog";
 
 const ZOOM_MIN = 0.55;
@@ -54,13 +54,16 @@ export class CityScene extends Phaser.Scene {
   private lastPrompt: string | null = null;
   private gasEmpty = false;
   private wasOnShift = false;
+  private cashMark = 0;
+  private couldAfford = false;
+  private sawMaxStreak = false;
   private buyLock = false;
   private serverMarket = false;
   private wasInPort = false;
   private lastSpot: string | null = null;
   private bannerToken = 0;
   private robReadyAt = new Map<string, number>();
-  private peers = new Map<string, { sprite: Phaser.GameObjects.Sprite; label: Phaser.GameObjects.Text }>();
+  private peers = new Map<string, { sprite: Phaser.GameObjects.Sprite; label: Phaser.GameObjects.Text; tx: number; ty: number; frame: 0 | 1; walk: number }>();
   private feet = new WeakMap<object, { x: number; y: number }>();
   private quotes: MarketQuote[] = marketQuotes();
   private stockOpen = false;
@@ -167,6 +170,9 @@ export class CityScene extends Phaser.Scene {
     this.groceryDismissed = false;
     this.gasEmpty = false;
     this.wasOnShift = false;
+    this.cashMark = 0;
+    this.couldAfford = false;
+    this.sawMaxStreak = false;
     this.buyLock = false;
     this.serverMarket = false;
     this.wasInPort = false;
@@ -372,10 +378,27 @@ export class CityScene extends Phaser.Scene {
     }
     this.drainEnergy(delta, input);
     const onShift = this.state.employed && this.inJob();
-    if (this.wasOnShift && !onShift) this.popup(this.player.x, this.player.y - 28, "OFF THE CLOCK", "#f4f1ea");
+    const streak = this.state.shiftTicks;
+    if (this.wasOnShift && !onShift) {
+      this.popup(this.player.x, this.player.y - 28, streak >= 2 ? "STREAK BROKE" : "OFF THE CLOCK", streak >= 2 ? "#ffb4a8" : "#f4f1ea");
+      this.sawMaxStreak = false;
+    }
     this.wasOnShift = onShift;
-    const pay = this.state.tickIncome(delta, onShift);
-    if (pay > 0) this.popup(this.player.x, this.player.y - 36, `+$${pay}`, "#d7c08a");
+    const before = this.state.cash;
+    const payday = this.state.tickIncome(delta, onShift);
+    if (payday.total > 0) {
+      payday.parts.forEach((part, index) => {
+        const color = part.tone === "job" ? "#ffd56a" : part.tone === "island" ? "#9fd0e4" : "#9ddeb4";
+        this.popup(this.player.x, this.player.y - 36 - index * 34, `+$${part.amount} ${part.label}`, color, true);
+      });
+      coinChime(payday.total >= 80);
+      if (this.state.shiftTicks >= 7 && !this.sawMaxStreak) {
+        this.sawMaxStreak = true;
+        this.flash("MAX SHIFT ×4");
+      }
+      this.celebrate(before);
+      this.noteAfford();
+    }
     this.tickMarket();
     if (this.stockOpen && !this.inStock()) this.closeStocks();
 
@@ -397,6 +420,7 @@ export class CityScene extends Phaser.Scene {
 
     if (this.player.health <= 0 && this.time.now >= this.recoverUntil) this.bust();
 
+    this.glidePeers(delta);
     this.publishPrompt();
     this.pushHud();
     this.posMs += delta;
@@ -1441,22 +1465,50 @@ export class CityScene extends Phaser.Scene {
       seen.add(peer.id);
       let row = this.peers.get(peer.id);
       if (!row) {
-        const sprite = this.add.sprite(peer.x, peer.y, "player-s-0").setScale(1.45).setTint(0x8eb4ff).setDepth(150);
+        const sprite = this.add.sprite(peer.x, peer.y, "player-s-0").setScale(1.45).setTint(0xb7d4ff).setDepth(150);
         const label = this.add
-          .text(peer.x, peer.y - 36, peer.name, { fontFamily: "Arial, sans-serif", fontSize: "12px", color: "#d5e4ff" })
+          .text(peer.x, peer.y - 36, peer.name, { fontFamily: "Arial, sans-serif", fontSize: "13px", color: "#d5e4ff" })
           .setOrigin(0.5)
           .setDepth(151);
-        row = { sprite, label };
+        row = { sprite, label, tx: peer.x, ty: peer.y, frame: 0, walk: 0 };
         this.peers.set(peer.id, row);
       }
-      row.sprite.setPosition(peer.x, peer.y).setDepth(150 + peer.y);
-      row.label.setPosition(peer.x, peer.y - 36).setText(peer.name);
+      row.tx = peer.x;
+      row.ty = peer.y;
+      row.label.setText(peer.name);
     }
     for (const [id, row] of this.peers) {
       if (seen.has(id)) continue;
       row.sprite.destroy();
       row.label.destroy();
       this.peers.delete(id);
+    }
+  }
+
+  /** Slide remote players toward the latest position so they move instead of popping. */
+  private glidePeers(delta: number): void {
+    const step = 1 - Math.exp(-delta / 70);
+    for (const row of this.peers.values()) {
+      const dx = row.tx - row.sprite.x;
+      const dy = row.ty - row.sprite.y;
+      const distance = Math.hypot(dx, dy);
+      if (distance > 1400) row.sprite.setPosition(row.tx, row.ty);
+      else {
+        row.sprite.x += dx * step;
+        row.sprite.y += dy * step;
+      }
+      row.label.setPosition(row.sprite.x, row.sprite.y - 36);
+      row.sprite.setDepth(150 + row.sprite.y);
+      row.label.setDepth(151 + row.sprite.y);
+      if (distance < 3) continue;
+      const facing = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? "e" : "w") : dy > 0 ? "s" : "n";
+      row.walk += delta;
+      if (row.walk > 130) {
+        row.walk = 0;
+        row.frame = row.frame === 0 ? 1 : 0;
+      }
+      row.sprite.setTexture(playerTexture(facing, row.frame));
+      row.sprite.setFlipX(facing === "w");
     }
   }
 
@@ -1552,7 +1604,8 @@ export class CityScene extends Phaser.Scene {
       if (this.canRob("stock")) lines.push("HOLD R TO ROB THE FLOOR");
     }
     if (this.inJob()) {
-      lines.push(this.state.employed ? "ON THE CLOCK" : "E CLOCK IN");
+      const mult = formatStreak(payStreakMultiplier(Math.max(1, this.state.shiftTicks)));
+      lines.push(this.state.employed ? `ON THE CLOCK ×${mult}` : "E CLOCK IN");
       if (this.canRob("port")) lines.push("HOLD R TO STEAL A SHIPMENT");
     }
     const spot = this.businessAt();
@@ -1578,8 +1631,8 @@ export class CityScene extends Phaser.Scene {
       return "Every island pays you.";
     }
     if (match.mode === "multi") return "Take a boat to another player's island. Get past the reinforcements, then buy it.";
-    if (this.inJob() && this.state.employed) return "Shift pay is on while you stay at the port.";
-    if (this.state.employed) return "Walk back into the port to pick the wage up again.";
+    if (this.inJob() && this.state.employed) return "Stay at the port. Every paycheck climbs, up to ×4. Step out and the streak dies.";
+    if (this.state.employed) return "The wage stopped. Walk back into the port. The streak starts over.";
     return "Drive or steal a ride, clock in at the port, or invest on the stock floor.";
   }
 
@@ -1587,6 +1640,10 @@ export class CityScene extends Phaser.Scene {
     this.state.health = this.player.health;
     const snapshot = this.state.snapshot(this.hint(), this.state.employed && this.inJob());
     snapshot.netWorth = this.state.worth(Object.fromEntries(this.quotes.map((quote) => [quote.id, quote.price])));
+    const lure = this.nextLure();
+    snapshot.lure = lure.text;
+    snapshot.lureReady = lure.ready;
+    snapshot.lureHot = lure.hot;
     if (this.riding) {
       snapshot.driving = true;
       snapshot.gas = this.riding.gas;
@@ -1606,6 +1663,10 @@ export class CityScene extends Phaser.Scene {
       snapshot.businesses.join(","),
       snapshot.vehicles.join(","),
       Math.round(snapshot.netWorth),
+      snapshot.shiftTicks,
+      snapshot.shiftEarned,
+      snapshot.lure,
+      snapshot.lureReady ? 1 : 0,
     ].join("|");
     if (hudKey === this.lastHudKey) return;
     this.lastHudKey = hudKey;
@@ -1625,22 +1686,100 @@ export class CityScene extends Phaser.Scene {
     this.game.canvas.focus();
   }
 
-  private popup(x: number, y: number, message: string, color: string): void {
+  private popup(x: number, y: number, message: string, color: string, big = false): void {
     const text = this.add
       .text(x, y, message, {
         fontFamily: "Arial Black, Arial, sans-serif",
-        fontSize: "20px",
+        fontSize: big ? "34px" : "20px",
         color,
+        stroke: "#1a1408",
+        strokeThickness: big ? 6 : 0,
       })
       .setOrigin(0.5)
       .setDepth(4000);
+    if (big) text.setScale(1.35);
     this.tweens.add({
       targets: text,
-      y: y - 42,
+      y: y - (big ? 86 : 42),
+      scaleX: 1,
+      scaleY: 1,
       alpha: 0,
-      duration: 880,
+      duration: big ? 1280 : 880,
       ease: "Cubic.easeOut",
       onComplete: () => text.destroy(),
     });
   }
+
+  private celebrate(before: number): void {
+    const cash = this.state.cash;
+    if (cash < this.cashMark) {
+      const held = CASH_MARKS.filter((mark) => mark.amount <= cash);
+      this.cashMark = held.length > 0 ? held[held.length - 1].amount : 0;
+    }
+    if (cash <= before) return;
+    let crossed: (typeof CASH_MARKS)[number] | null = null;
+    for (const mark of CASH_MARKS) {
+      if (before < mark.amount && cash >= mark.amount) crossed = mark;
+    }
+    if (!crossed) return;
+    this.cashMark = crossed.amount;
+    this.flash(crossed.label);
+    coinChime(true);
+  }
+
+  private noteAfford(): void {
+    const lure = this.nextLure();
+    if (lure.ready && !this.couldAfford && lure.name) this.flash(`GO BUY THE ${lure.name}`);
+    this.couldAfford = lure.ready;
+  }
+
+  private nextLure(): { text: string; ready: boolean; hot: boolean; name: string } {
+    const goals: { name: string; price: number }[] = [];
+    for (const ride of this.map.rides) {
+      if (ride.kind !== "car" || ride.price <= 0 || this.state.ownedVehicles.has(ride.id)) continue;
+      goals.push({ name: ride.name, price: ride.price });
+    }
+    for (const spot of this.map.businesses) {
+      if (!this.state.owns(spot.id)) goals.push({ name: spot.name, price: spot.price });
+      else {
+        const cost = upgradeCost(spot.id, this.state.levelOf(spot.id));
+        if (cost) goals.push({ name: `${spot.name} LV${this.state.levelOf(spot.id) + 1}`, price: cost });
+      }
+    }
+    const match = getMatch();
+    if (match.mode === "single" && !this.hasBoat) goals.push({ name: "YACHT", price: TUNING.crossingBoatCost });
+    if (match.islands.some((island) => island.id !== match.playerId && island.heldBy !== match.playerId)) {
+      goals.push({ name: "ISLAND", price: TUNING.islandBuyCost });
+    }
+    goals.sort((left, right) => left.price - right.price);
+    const next = goals[0];
+    if (!next) return { text: "THE CITY IS YOURS", ready: true, hot: false, name: "" };
+    const gap = next.price - this.state.cash;
+    if (gap <= 0) return { text: `${next.name} ${formatCash(next.price)}`, ready: true, hot: false, name: next.name };
+    return {
+      text: `${next.name} · ${formatCash(gap)} AWAY`,
+      ready: false,
+      hot: gap <= Math.max(40, next.price * 0.2),
+      name: next.name,
+    };
+  }
 }
+
+const CASH_MARKS: { amount: number; label: string }[] = [
+  { amount: 100, label: "$100. DON'T STOP." },
+  { amount: 250, label: "$250 IN HAND" },
+  { amount: 500, label: "$500. THE STREET NOTICED." },
+  { amount: 1_000, label: "$1,000. YOU'RE IN IT." },
+  { amount: 2_500, label: "$2,500" },
+  { amount: 5_000, label: "$5,000" },
+  { amount: 10_000, label: "$10,000" },
+  { amount: 25_000, label: "$25,000" },
+  { amount: 50_000, label: "$50,000" },
+  { amount: 100_000, label: "$100,000" },
+  { amount: 250_000, label: "$250,000" },
+  { amount: 500_000, label: "HALF A MILLION" },
+  { amount: 1_000_000, label: "ONE MILLION" },
+  { amount: 10_000_000, label: "TEN MILLION" },
+  { amount: 100_000_000, label: "A HUNDRED MILLION" },
+  { amount: 1_000_000_000, label: "A BILLION" },
+];
