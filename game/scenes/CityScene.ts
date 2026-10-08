@@ -512,15 +512,32 @@ export class CityScene extends Phaser.Scene {
     });
   }
 
-  /** The yacht is the only ride that may leave home water. */
+  /**
+   * Singleplayer still needs the yacht to leave home water.
+   * In multiplayer any boat can cross, and standing on another player's island is allowed.
+   */
   private fenceCrossing(): void {
     if (this.hasBoat) return;
     const target = this.riding ?? this.player;
+    const match = getMatch();
+    if (match.mode === "multi") {
+      if (this.riding?.kind === "boat") return;
+      if (landIslandIndex(target.x, target.y) !== null) {
+        this.homeSpot = { x: target.x, y: target.y };
+        return;
+      }
+      this.snapHome(target);
+      return;
+    }
     const inside = target.x >= 0 && target.y >= 0 && target.x <= ISLAND_SPAN && target.y <= ISLAND_SPAN;
     if (inside) {
       this.homeSpot = { x: target.x, y: target.y };
       return;
     }
+    this.snapHome(target);
+  }
+
+  private snapHome(target: Phaser.Physics.Arcade.Sprite): void {
     target.setPosition(this.homeSpot.x, this.homeSpot.y);
     const body = target.body as Phaser.Physics.Arcade.Body | null;
     body?.setVelocity(0, 0);
@@ -592,9 +609,9 @@ export class CityScene extends Phaser.Scene {
   }
 
   private nearestLand(x: number, y: number): { x: number; y: number } | null {
-    for (const radius of [56, 96, 150, 220, 320]) {
-      for (let step = 0; step < 16; step += 1) {
-        const angle = (Math.PI * 2 * step) / 16;
+    for (let radius = 48; radius <= 640; radius += 48) {
+      for (let step = 0; step < 24; step += 1) {
+        const angle = (Math.PI * 2 * step) / 24;
         const point = { x: x + Math.cos(angle) * radius, y: y + Math.sin(angle) * radius };
         if (!isWaterWorld(point.x, point.y) && !this.hitsWall(point.x, point.y)) return point;
       }
@@ -958,7 +975,8 @@ export class CityScene extends Phaser.Scene {
   }
 
   private driveRide(ride: Vehicle): void {
-    if (!ride.owned) this.markStolen(ride);
+    const ferry = getMatch().mode === "multi" && ride.kind === "boat";
+    if (!ride.owned && !ferry) this.markStolen(ride);
     this.mount(ride);
   }
 
@@ -988,15 +1006,22 @@ export class CityScene extends Phaser.Scene {
   private dismount(): void {
     const ride = this.riding;
     if (!ride) return;
-    ride.park();
     if (ride.kind === "boat") {
       const shore = this.nearestLand(ride.x, ride.y);
-      if (shore) this.player.setPosition(shore.x, shore.y);
-      else {
+      if (!shore) {
+        if (getMatch().mode === "multi") {
+          this.popup(ride.x, ride.y - 28, "NO SHORE", "#f4f1ea");
+          return;
+        }
+        ride.park();
         const pier = this.map.pierZone;
         this.player.setPosition(pier.x + pier.w / 2, pier.y + pier.h / 2);
+      } else {
+        ride.park();
+        this.player.setPosition(shore.x, shore.y);
       }
     } else {
+      ride.park();
       const side = ride.heading;
       const spots = [1, -1].map((sign) => ({
         x: ride.x + Math.cos(side) * 72 * sign,
@@ -1552,7 +1577,7 @@ export class CityScene extends Phaser.Scene {
       if (owned < match.islands.length) return `Buy islands across the ocean. You hold ${owned} of ${match.islands.length}. A yacht crosses the water.`;
       return "Every island pays you.";
     }
-    if (match.mode === "multi") return "Get past each island's reinforcements, then buy them all.";
+    if (match.mode === "multi") return "Take a boat to another player's island. Get past the reinforcements, then buy it.";
     if (this.inJob() && this.state.employed) return "Shift pay is on while you stay at the port.";
     if (this.state.employed) return "Walk back into the port to pick the wage up again.";
     return "Drive or steal a ride, clock in at the port, or invest on the stock floor.";
