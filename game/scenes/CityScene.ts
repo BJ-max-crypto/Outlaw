@@ -4,7 +4,7 @@ import type { CityProfile, Peer, SessionView } from "@/lib/game/types";
 import { Siren } from "@/game/audio/siren";
 import { Player, type MoveInput } from "@/game/entities/Player";
 import { ShoreGuard } from "@/game/entities/ShoreGuard";
-import { createPlayerTextures } from "@/game/entities/textures";
+import { createCopTextures, createPlayerTextures } from "@/game/entities/textures";
 import { Vehicle } from "@/game/entities/Vehicle";
 import { buildCityMap, closestSpawns, createWallBodies, paintCity, type PlacedBusiness } from "@/game/map/cityMap";
 import { rectContains } from "@/game/map/geometry";
@@ -138,7 +138,6 @@ export class CityScene extends Phaser.Scene {
       "boat-deck",
     ];
     for (const file of files) this.load.image(file, `/vehicles/${file}.png`);
-    this.load.image("avatar-cop", "/avatars/cop.png");
     this.load.image("ocean", "/map/ocean.jpg");
   }
 
@@ -189,6 +188,7 @@ export class CityScene extends Phaser.Scene {
 
     paintCity(this);
     createPlayerTextures(this);
+    createCopTextures(this);
     this.walls = createWallBodies(this, this.map.walls);
     this.blockers = this.map.walls.map((wall) => new Phaser.Geom.Rectangle(wall.x, wall.y, wall.w, wall.h));
     this.layoutIslands();
