@@ -17,6 +17,7 @@ import StockDesk from "@/components/hud/StockDesk";
 import { currentGame } from "@/game/createGame";
 import { getMatch, orderIslands, saleIslands, setMatch, setPendingProfile, shareSpot, viewSpot, type IslandCard, type SharedSpot } from "@/game/mode/match";
 import { primeAudio } from "@/game/audio/siren";
+import { ADS_ENABLED } from "@/lib/ads/enabled";
 import { TUNING } from "@/game/tuning";
 import type { RewardPayload } from "@/lib/ads/gptRewarded";
 import { watchAds } from "@/lib/ads/rewarded";
@@ -176,7 +177,10 @@ export default function RunoutApp() {
       gameBus.on("robbery", setRobbery),
       gameBus.on("banner", setBanner),
       gameBus.on("map", setMap),
-      gameBus.on("pos", setPos),
+      gameBus.on("pos", (next) => {
+        posRef.current = next;
+        setPos(next);
+      }),
       gameBus.on("map-toggle", () => setMapOpen((open) => !open)),
       gameBus.on("stocks", setStocks),
       gameBus.on("grocery", setGrocery),
@@ -309,13 +313,19 @@ export default function RunoutApp() {
     if (screen !== "play" || mode !== "multi") return;
     let stopped = false;
     let busy = false;
+    let pending = false;
     const tick = async () => {
-      if (stopped || busy) return;
+      if (stopped) return;
+      if (busy) {
+        pending = true;
+        return;
+      }
       const match = getMatch();
       if (match.mode !== "multi" || !match.code || match.islands.length < 2) return;
       const here = posRef.current;
       if (!here) return;
       busy = true;
+      pending = false;
       try {
         const shared = shareSpot(here.x, here.y, match.islands);
         const response = await fetch("/api/session", {
@@ -336,10 +346,11 @@ export default function RunoutApp() {
         /* The next tick tries again. */
       } finally {
         busy = false;
+        if (pending && !stopped) void tick();
       }
     };
     void tick();
-    const timer = window.setInterval(() => void tick(), 120);
+    const timer = window.setInterval(() => void tick(), 80);
     return () => {
       stopped = true;
       window.clearInterval(timer);
@@ -687,12 +698,12 @@ export default function RunoutApp() {
           onOpenPlayer={(id) => void openPlayer(id)}
         />
       )}
-      {screen === "play" && (
+      {ADS_ENABLED && screen === "play" && (
         <ShopButton
           onReward={async (reward, report) => grantAfterAd(reward, playerId(), report)}
         />
       )}
-      {screen === "play" && <WatchAdButton onReward={(reward) => grantWatchedMoney(reward, playerId())} />}
+      {ADS_ENABLED && screen === "play" && <WatchAdButton onReward={(reward) => grantWatchedMoney(reward, playerId())} />}
       {screen === "play" && mode === "multi" && session && (
         <IslandActions
           session={session}
@@ -723,6 +734,7 @@ export default function RunoutApp() {
           loseQuarter={bust.loseQuarter}
           busy={bustBusy}
           note={bustNote}
+          ads={ADS_ENABLED}
           onWatch={() => void softenBust()}
           onTake={() => gameBus.emit("bust-resolve", "half")}
         />

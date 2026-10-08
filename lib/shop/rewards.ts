@@ -1,3 +1,5 @@
+import { ADS_ENABLED } from "@/lib/ads/enabled";
+
 /**
  * Rewarded-ad catalog. A finished ad POSTs /api/shop with the reward id.
  * Cash and earnings are checked on the server. Speed, energy, and gas run on the player.
@@ -78,7 +80,7 @@ export const SHOP_REWARDS: ShopReward[] = [
   },
 ];
 
-export const SHOP_VISIBLE = true;
+export const SHOP_VISIBLE = ADS_ENABLED;
 
 export function rewardById(id: string): ShopReward | undefined {
   return SHOP_REWARDS.find((reward) => reward.id === id);

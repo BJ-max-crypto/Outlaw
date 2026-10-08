@@ -19,6 +19,7 @@ import { PoliceDirector } from "@/game/systems/PoliceDirector";
 import { RobberySystem } from "@/game/systems/RobberySystem";
 import { WantedSystem } from "@/game/systems/WantedSystem";
 import { formatStreak, payStreakMultiplier, TUNING } from "@/game/tuning";
+import { ADS_ENABLED } from "@/lib/ads/enabled";
 import { businessById, FOODS, type FoodItem, type MarketQuote } from "@/game/world/catalog";
 
 const ZOOM_MIN = 0.55;
@@ -1467,7 +1468,13 @@ export class CityScene extends Phaser.Scene {
       if (!row) {
         const sprite = this.add.sprite(peer.x, peer.y, "player-s-0").setScale(1.45).setTint(0xb7d4ff).setDepth(150);
         const label = this.add
-          .text(peer.x, peer.y - 36, peer.name, { fontFamily: "Arial, sans-serif", fontSize: "13px", color: "#d5e4ff" })
+          .text(peer.x, peer.y - 36, peer.name, {
+            fontFamily: "Arial, sans-serif",
+            fontSize: "14px",
+            color: "#f4f7ff",
+            stroke: "#12151c",
+            strokeThickness: 4,
+          })
           .setOrigin(0.5)
           .setDepth(151);
         row = { sprite, label, tx: peer.x, ty: peer.y, frame: 0, walk: 0 };
@@ -1623,7 +1630,11 @@ export class CityScene extends Phaser.Scene {
   }
 
   private hint(): string {
-    if (this.state.wanted > 0) return "The clock keeps running if you rob again. Last a minute and a half and the cops break off. A bust takes half your cash, or a quarter if you watch an ad.";
+    if (this.state.wanted > 0) {
+      return ADS_ENABLED
+        ? "The clock keeps running if you rob again. Last a minute and a half and the cops break off. A bust takes half your cash, or a quarter if you watch an ad."
+        : "The clock keeps running if you rob again. Last a minute and a half and the cops break off. A bust takes half your cash.";
+    }
     const match = getMatch();
     if (match.mode === "single" && match.islands.length > 1) {
       const owned = match.islands.filter((island) => island.heldBy === match.playerId).length;
