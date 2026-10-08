@@ -11,7 +11,8 @@ import { rectContains } from "@/game/map/geometry";
 import { MAP_SCALE, isWaterWorld, landIslandIndex, setIslandOrigins } from "@/game/map/waterMask";
 import { getMatch, heldIncome, islandIncome, islandOrigin, ISLAND_SPAN, orderIslands, setMatch, takePendingProfile } from "@/game/mode/match";
 import type { EconomyView } from "@/lib/economy/model";
-import { businessPerMinute, marketQuotes } from "@/lib/economy/model";
+import { businessPerMinute, marketQuotes, tradedQuotes } from "@/lib/economy/model";
+import { garageById, RACE_POINTS, type SocialView } from "@/lib/sandbox/catalog";
 import { formatCash } from "@/lib/game/format";
 import { CityState } from "@/game/state/CityState";
 import { PoliceDirector } from "@/game/systems/PoliceDirector";
@@ -82,6 +83,12 @@ export class CityScene extends Phaser.Scene {
   private offBust: (() => void) | null = null;
   private offBoat: (() => void) | null = null;
   private offIslandBuy: (() => void) | null = null;
+  private offSocial: (() => void) | null = null;
+  private city: SocialView | null = null;
+  private raceMark: Phaser.GameObjects.Arc | null = null;
+  private dropMark: Phaser.GameObjects.Arc | null = null;
+  private dropSent = "";
+  private raceHold = 0;
   private hasBoat = false;
   private guards: ShoreGuard[] = [];
   private rewardUntil = 0;
@@ -249,6 +256,7 @@ export class CityScene extends Phaser.Scene {
       this.spawnYacht();
     });
     this.offIslandBuy = gameBus.on("island-buy", (id) => this.buySaleIsland(id));
+    this.offSocial = gameBus.on("social", (social) => this.applyCity(social));
 
     this.events.on(Phaser.Scenes.Events.POST_UPDATE, this.onPostUpdate, this);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
@@ -268,6 +276,9 @@ export class CityScene extends Phaser.Scene {
       this.offBust?.();
       this.offBoat?.();
       this.offIslandBuy?.();
+      this.offSocial?.();
+      this.raceMark?.destroy();
+      this.dropMark?.destroy();
       for (const guard of this.guards) guard.destroy();
       if (this.onWheel) this.game.canvas.removeEventListener("wheel", this.onWheel);
       if (this.onKeyDown) window.removeEventListener("keydown", this.onKeyDown);
@@ -375,6 +386,7 @@ export class CityScene extends Phaser.Scene {
     this.watchIslands();
     this.syncGrocery();
     this.runRobbery(delta);
+    this.watchWorld();
 
     for (const ride of this.rides) ride.syncLabel();
     const chasing = this.wanted.active;
@@ -958,6 +970,7 @@ export class CityScene extends Phaser.Scene {
     body.setVelocity(0, 0);
     this.state.ownedVehicles.add(ride.id);
     ride.refreshLabel();
+    gameBus.emit("flag-stolen", ride.id);
     this.onCrime(ride.kind === "boat" ? 2 : 1, "STOLEN");
   }
 
@@ -1129,9 +1142,10 @@ export class CityScene extends Phaser.Scene {
       shares: view.shares,
       basis: view.basis,
       items: view.items,
-      realized: view.realized,
-      incomeScale: view.incomeScale,
-    });
+        realized: view.realized,
+        incomeScale: view.incomeScale,
+        extraWorth: view.extraWorth,
+      });
     if (view.quotes.length > 0) {
       this.serverMarket = true;
       for (const quote of this.quotes) {
@@ -1162,7 +1176,7 @@ export class CityScene extends Phaser.Scene {
     const now = Date.now();
     if (this.marketMs !== 0 && now - this.marketMs < 3000) return;
     this.marketMs = now;
-    const next = marketQuotes(now);
+    const next = tradedQuotes(now);
     for (const quote of this.quotes) {
       const row = next.find((item) => item.id === quote.id);
       if (!row) continue;
@@ -1173,24 +1187,118 @@ export class CityScene extends Phaser.Scene {
   }
 
   private runRobbery(delta: number): void {
-    const spot = this.businessAt();
-    const allowed = !!spot && !this.riding && !this.state.owns(spot.id) && this.canRob(spot.id);
+    const site = this.robberySite();
+    const allowed = !!site && this.canRob(site.id);
     const finished = this.robbery.update(delta, this.keys.r.isDown && allowed, allowed);
     const progress = finished ? 0 : this.robbery.progress;
     if (progress !== this.lastProgress) {
       this.lastProgress = progress;
       gameBus.emit("robbery", progress);
     }
-    if (!finished || !spot) return;
-    const span = spot.robMax - spot.robMin;
-    const take = spot.robMin + Math.floor(Math.random() * (span + 1));
-    this.state.cash += take;
-    this.robReadyAt.set(spot.id, this.time.now + 45000);
+    if (!finished || !site) return;
+    this.robReadyAt.set(site.id, this.time.now + 45000);
     this.robbery.reset();
     this.lastProgress = 0;
     gameBus.emit("robbery", 0);
-    this.popup(this.player.x, this.player.y - 36, `+$${take}`, "#d7c08a");
-    this.onCrime(spot.wanted, "ALARM — UNITS MOVING");
+    gameBus.emit("rob-site", { id: site.id, x: this.player.x, y: this.player.y });
+    this.onCrime(site.wanted, "ALARM — UNITS MOVING");
+  }
+
+  private applyCity(social: SocialView): void {
+    const toast = social.toast;
+    this.city = social;
+    if (toast) this.flash(toast);
+    this.syncGarage(social.spawned);
+    const next = social.race ? social.race.checkpoint : -1;
+    const point = next >= 0 ? RACE_POINTS[next] : null;
+    if (!point) {
+      this.raceMark?.destroy();
+      this.raceMark = null;
+      this.raceHold = 0;
+    } else {
+      const x = point.x * MAP_SCALE;
+      const y = point.y * MAP_SCALE;
+      if (!this.raceMark) this.raceMark = this.add.circle(x, y, 28, 0xd7c08a, 0.35).setDepth(4);
+      this.raceMark.setPosition(x, y);
+    }
+    const drop = social.drop;
+    if (!drop?.live) {
+      this.dropMark?.destroy();
+      this.dropMark = null;
+    } else {
+      if (!this.dropMark) this.dropMark = this.add.circle(drop.x, drop.y, 22, 0x7dcea0, 0.55).setDepth(4);
+      this.dropMark.setPosition(drop.x, drop.y);
+    }
+  }
+
+  private syncGarage(id: string): void {
+    const current = this.rides.find((ride) => ride.id.startsWith("garage-"));
+    if (!id) {
+      if (current && !current.occupied) this.removeRide(current);
+      return;
+    }
+    if (current?.id === `garage-${id}`) return;
+    if (current?.occupied) return;
+    if (current) this.removeRide(current);
+    const spec = garageById(id);
+    if (!spec) return;
+    const ride = new Vehicle(this, {
+      id: `garage-${id}`,
+      kind: "car",
+      texture: spec.texture,
+      x: this.map.carCurb.x,
+      y: this.map.carCurb.y + 160,
+      heading: Math.PI / 2,
+      name: spec.name,
+      speed: spec.speed,
+      price: spec.price,
+    });
+    ride.accelScale = spec.accel;
+    ride.turnScale = spec.handling;
+    ride.owned = true;
+    ride.stolen = this.city?.stolen.some((car) => car.id === id) ?? false;
+    this.rideGroup.add(ride);
+    ride.stayParked();
+    this.rides.push(ride);
+    this.feet.set(ride, { x: ride.x, y: ride.y });
+    this.state.ownedVehicles.add(ride.id);
+  }
+
+  private removeRide(ride: Vehicle): void {
+    this.state.ownedVehicles.delete(ride.id);
+    this.rides = this.rides.filter((item) => item !== ride);
+    this.feet.delete(ride);
+    ride.destroy();
+  }
+
+  private watchWorld(): void {
+    const drop = this.city?.drop;
+    if (drop?.live && Phaser.Math.Distance.Between(this.player.x, this.player.y, drop.x, drop.y) < 180) {
+      const key = `${drop.x}:${drop.y}`;
+      if (this.dropSent !== key) {
+        this.dropSent = key;
+        gameBus.emit("drop-claim", { x: this.player.x, y: this.player.y });
+      }
+    } else this.dropSent = "";
+    const race = this.city?.race;
+    const point = race ? RACE_POINTS[race.checkpoint] : null;
+    if (!point) return;
+    const x = point.x * MAP_SCALE;
+    const y = point.y * MAP_SCALE;
+    if (Phaser.Math.Distance.Between(this.player.x, this.player.y, x, y) > 160) return;
+    if (this.time.now < this.raceHold) return;
+    this.raceHold = this.time.now + 1800;
+    gameBus.emit("race-step", { x: this.player.x, y: this.player.y });
+  }
+
+  /** Cash is decided on the server. This only names the building the player is standing in. */
+  private robberySite(): { id: string; wanted: number } | null {
+    if (this.riding) return null;
+    const spot = this.businessAt();
+    if (spot && !this.state.owns(spot.id)) return { id: spot.id, wanted: spot.wanted };
+    if (this.inJob()) return { id: "port", wanted: 4 };
+    if (this.inStock()) return { id: "stock", wanted: 5 };
+    return null;
   }
 
   private onCrime(wanted: number, banner: string): void {
@@ -1203,7 +1311,7 @@ export class CityScene extends Phaser.Scene {
     } else {
       this.escapeMs = TUNING.escapeMs;
       this.publishEscape(true);
-      const spots = closestSpawns(this.map.policeSpawns, here.x, here.y, 4);
+      const spots = closestSpawns(this.map.policeSpawns, here.x, here.y, Math.min(6, Math.max(1, wanted)));
       this.police.alert(spots, this.walls, this.player, here, () => this.onCopHit());
       this.flash(banner);
     }
@@ -1258,6 +1366,7 @@ export class CityScene extends Phaser.Scene {
     this.bustPending = false;
     const lost = choice === "quarter" ? this.state.cutQuarter() : this.state.cutInHalf();
     this.live = true;
+    gameBus.emit("heat-clear", "bust");
     this.flash(choice === "quarter" ? `AD — LOST $${lost}` : `BUSTED — LOST $${lost}`);
     this.pushHud();
   }
@@ -1353,6 +1462,7 @@ export class CityScene extends Phaser.Scene {
       this.police.stop();
       this.siren.stop();
       this.decayMs = 0;
+      gameBus.emit("heat-clear", "escape");
       this.flash("GOT AWAY");
       this.pushHud();
     }
@@ -1412,8 +1522,14 @@ export class CityScene extends Phaser.Scene {
     }
     const lines: string[] = [];
     if (this.atPier() && !this.hasBoat) lines.push(`E BUY YACHT ${formatCash(TUNING.crossingBoatCost)}`);
-    if (this.inStock()) lines.push(this.stockOpen ? "E CLOSE" : "E INVEST");
-    if (this.inJob()) lines.push(this.state.employed ? "ON THE CLOCK" : "E CLOCK IN");
+    if (this.inStock()) {
+      lines.push(this.stockOpen ? "E CLOSE" : "E INVEST");
+      if (this.canRob("stock")) lines.push("HOLD R TO ROB THE FLOOR");
+    }
+    if (this.inJob()) {
+      lines.push(this.state.employed ? "ON THE CLOCK" : "E CLOCK IN");
+      if (this.canRob("port")) lines.push("HOLD R TO STEAL A SHIPMENT");
+    }
     const spot = this.businessAt();
     if (this.inGrocery()) {
       lines.push(this.groceryOpen ? "E CLOSE" : "E SHOP");

@@ -13,9 +13,12 @@ type HudProps = {
   mapOpen: boolean;
   onToggleMap: () => void;
   onPanel: (panel: "goals" | "profile" | "ranks") => void;
+  onCity: () => void;
+  flash: string | null;
+  dropLive: boolean;
 };
 
-export default function Hud({ hud, prompt, robbery, banner, escapeMs, map, pos, mapOpen, onToggleMap, onPanel }: HudProps) {
+export default function Hud({ hud, prompt, robbery, banner, escapeMs, map, pos, mapOpen, onToggleMap, onPanel, onCity, flash, dropLive }: HudProps) {
   const healthPct = Math.max(0, Math.min(100, (hud.health / hud.maxHealth) * 100));
   const energyPct = Math.max(0, Math.min(100, (hud.energy / hud.maxEnergy) * 100));
 
@@ -62,7 +65,10 @@ export default function Hud({ hud, prompt, robbery, banner, escapeMs, map, pos, 
           <PanelButton label="GOALS" onClick={() => onPanel("goals")} />
           <PanelButton label="PROFILE" onClick={() => onPanel("profile")} />
           <PanelButton label="RANKS" onClick={() => onPanel("ranks")} />
+          <PanelButton label="CITY" onClick={onCity} />
         </div>
+        {flash && <p className="mt-2 text-[10px] tracking-[0.12em] text-[#d7c08a]">{flash}</p>}
+        {dropLive && <p className="mt-1 text-[10px] tracking-[0.12em] text-[#7dcea0]">SUPPLY DROP ON THE ISLAND</p>}
       </section>
 
       <MiniMap map={map} pos={pos} open={mapOpen} onToggle={onToggleMap} />

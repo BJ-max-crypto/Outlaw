@@ -36,10 +36,10 @@ export const BUSINESSES: BusinessDef[] = [
 ];
 
 export const STOCKS: StockDef[] = [
-  { id: "isle", name: "ISLE", price: 48 },
-  { id: "harbor", name: "HARBOR", price: 86 },
+  { id: "isle", name: "COASTAL", price: 48 },
+  { id: "harbor", name: "PORT CO.", price: 86 },
   { id: "neon", name: "NEON", price: 64 },
-  { id: "fuel", name: "FUEL", price: 35 },
+  { id: "fuel", name: "QUICKSTOP", price: 35 },
 ];
 
 export type MarketQuote = StockDef & { history: number[] };

@@ -29,6 +29,8 @@ export class CityState {
   incomeFrozen = false;
   /** Ad reward scale. 2 doubles every earning until it expires. */
   earningsScale = 1;
+  /** Garage, safe, and loan debt. The server is the source of this number. */
+  extraWorth = 0;
 
   constructor(cash = TUNING.startingCash) {
     this.cash = cash;
@@ -88,10 +90,12 @@ export class CityState {
     items: { id: string }[];
     realized: number;
     incomeScale: number;
+    extraWorth?: number;
   }): void {
     this.cash = input.cash;
     this.stockProfit = input.realized;
     this.incomeScale = input.incomeScale;
+    if (typeof input.extraWorth === "number") this.extraWorth = input.extraWorth;
     this.ownedBusinesses.clear();
     this.businessLevels.clear();
     for (const [id, level] of Object.entries(input.levels)) {
@@ -107,13 +111,15 @@ export class CityState {
   }
 
   worth(prices: Record<string, number>): number {
-    return netWorth({
-      cash: this.cash,
-      levels: Object.fromEntries(this.businessLevels),
-      shares: Object.fromEntries(this.shares),
-      prices,
-      items: [...this.items],
-    });
+    return (
+      netWorth({
+        cash: this.cash,
+        levels: Object.fromEntries(this.businessLevels),
+        shares: Object.fromEntries(this.shares),
+        prices,
+        items: [...this.items],
+      }) + this.extraWorth
+    );
   }
 
   portfolio(prices: Record<string, number>): number {
