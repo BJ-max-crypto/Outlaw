@@ -283,7 +283,19 @@ function tickRaces(now: number): void {
   }
 }
 
+function tickBounties(now: number): void {
+  for (const [id, bounty] of world.bounties) {
+    if (now - bounty.at <= 90_000) continue;
+    world.bounties.delete(id);
+    const target = getAccount(id);
+    if (!target) continue;
+    const box = ensureSandbox(target);
+    if (now - box.wantedAt > 90_000) box.wanted = 0;
+  }
+}
+
 export function tickSocial(account: Account, now: number): void {
+  tickBounties(now);
   const box = ensureSandbox(account);
   if (box.wanted > 0 && now - box.wantedAt > 90_000) {
     box.wanted = 0;
