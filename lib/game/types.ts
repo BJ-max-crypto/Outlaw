@@ -141,6 +141,12 @@ export type GameEventMap = {
   "business-buy": string;
   "visit-port": undefined;
   "owned-spot": { id: string; name: string } | null;
+  social: import("@/lib/sandbox/catalog").SocialView;
+  "rob-site": { id: string; x: number; y: number };
+  "heat-clear": "bust" | "escape";
+  "flag-stolen": string;
+  "drop-claim": { x: number; y: number };
+  "race-step": { x: number; y: number };
 };
 
 export type SessionView = {

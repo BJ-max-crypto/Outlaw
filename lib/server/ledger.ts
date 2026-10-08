@@ -24,13 +24,15 @@ import {
   rewardScaleFor,
   ROBBERY_GAP_MS,
   ROBBERY_GRANT,
-  marketQuotes,
+  tradedQuotes,
   upgradeCost,
   type EconomyData,
   type EconomyView,
   type QuoteState,
 } from "@/lib/economy/model";
 import { getAccount, heldPayPerMinute, listAccounts, loadAccount, saveAccount, type Account } from "@/lib/server/world";
+import { applySocial, assetAdjust, buildSocial, businessInsured, businessPrice, sandboxAchievements, tickSocial, type PlayerSandbox } from "@/lib/server/social";
+import type { SocialView } from "@/lib/sandbox/catalog";
 
 type Report = {
   cash?: number;
@@ -46,6 +48,8 @@ type Report = {
   stockProfit?: number;
   objectivesDone?: number;
   username?: string;
+  x?: number;
+  y?: number;
 };
 
 const quotes: QuoteState[] = STOCKS.map((stock) => ({
@@ -61,7 +65,7 @@ function prices(): Record<string, number> {
 
 /** Copy the clock-based quotes into the trade book. Same prices for every player. */
 export function stepMarket(now = Date.now()): QuoteState[] {
-  const next = marketQuotes(now);
+  const next = tradedQuotes(now);
   for (const quote of quotes) {
     const row = next.find((item) => item.id === quote.id);
     if (!row) continue;
@@ -73,7 +77,19 @@ export function stepMarket(now = Date.now()): QuoteState[] {
 
 function economyOf(account: Account, now: number): EconomyData {
   if (!account.economy) account.economy = blankEconomy(now);
-  return account.economy;
+  const data = account.economy;
+  const blank = blankEconomy(now);
+  data.levels ??= {};
+  data.shares ??= {};
+  data.basis ??= {};
+  data.items ??= [];
+  data.achievements ??= [];
+  data.announced ??= [];
+  data.claimed ??= [];
+  data.claimedEvents ??= [];
+  data.progress ??= {};
+  data.objectiveIds ??= blank.objectiveIds;
+  return data;
 }
 
 function rollDay(data: EconomyData, now: number): void {
@@ -100,7 +116,7 @@ function applyOffline(account: Account, now: number): void {
   const gap = now - data.lastSeen;
   if (gap > ONLINE_GAP_MS && Object.keys(data.levels).length > 0) {
     const minutes = Math.min(OFFLINE_CAP_MIN, gap / 60_000);
-    const pay = Math.floor(businessMinutes(data, incomeScaleFor(now)) * minutes);
+    const pay = Math.floor(businessMinutes(data, incomeScaleFor(now, businessInsured(account))) * minutes);
     if (pay > 0) {
       account.cash += pay;
       data.earnedToday += pay;
@@ -126,6 +142,9 @@ function refreshAchievements(account: Account, now: number): string[] {
     stockProfit: data.stockProfit,
     objectivesDone: data.objectivesDone,
   });
+  for (const id of sandboxAchievements(account)) {
+    if (!unlocked.includes(id)) unlocked.push(id);
+  }
   const fresh = unlocked.filter((id) => !data.achievements.includes(id));
   for (const id of fresh) {
     data.achievements.push(id);
@@ -145,8 +164,10 @@ function markAnnounced(account: Account, fresh: string[]): void {
 
 function toView(account: Account, now: number, fresh: string[]): EconomyView {
   const data = economyOf(account, now);
-  const scale = incomeScaleFor(now);
+  const insured = businessInsured(account);
+  const scale = incomeScaleFor(now, insured);
   const priceBook = prices();
+  const extraWorth = assetAdjust(account);
   const portfolio = portfolioValue(data.shares, priceBook);
   const invested = investedCapital(data.basis);
   const profit = portfolio - invested;
@@ -160,7 +181,8 @@ function toView(account: Account, now: number, fresh: string[]): EconomyView {
   const event = currentEvent(now);
   return {
     cash: account.cash,
-    netWorth: worth,
+    netWorth: worth + extraWorth,
+    extraWorth,
     username: account.username,
     rank: rankOf(account.id),
     levels: { ...data.levels },
@@ -208,6 +230,7 @@ function toView(account: Account, now: number, fresh: string[]): EconomyView {
 export function present(account: Account, now = Date.now()): EconomyView {
   applyOffline(account, now);
   stepMarket(now);
+  tickSocial(account, now);
   const fresh = refreshAchievements(account, now);
   markAnnounced(account, fresh);
   saveAccount(account);
@@ -297,6 +320,14 @@ export function syncReported(account: Account, report: Report, now = Date.now())
   if (Number.isFinite(report.energy)) account.energy = Math.max(0, Math.min(100, Math.floor(report.energy as number)));
   if (typeof report.employed === "boolean") account.employed = report.employed;
   if (Array.isArray(report.vehicles)) account.vehicles = report.vehicles.filter((id) => typeof id === "string").slice(0, 24);
+  if (Number.isFinite(report.x) && Number.isFinite(report.y)) {
+    const box = ((account.economy ??= blankEconomy(now)) as EconomyData & { sandbox?: PlayerSandbox }).sandbox;
+    if (box) {
+      box.x = Math.round(report.x as number);
+      box.y = Math.round(report.y as number);
+      box.seenAt = now;
+    }
+  }
   account.businesses = Object.keys(data.levels);
   data.syncedAt = now;
   data.lastSeen = now;
@@ -322,6 +353,12 @@ export async function readEconomy(id: string, username = ""): Promise<EconomyVie
   return present(account);
 }
 
+export async function readSocial(id: string, username = ""): Promise<SocialView> {
+  const account = await accountFor(id, username);
+  present(account);
+  return buildSocial(account, Date.now());
+}
+
 export async function postEconomy(
   id: string,
   body: Report & {
@@ -332,18 +369,24 @@ export async function postEconomy(
     side?: "buy" | "sell";
     eventId?: string;
   },
-): Promise<{ view: EconomyView; error?: string }> {
+): Promise<{ view: EconomyView; social: SocialView; error?: string }> {
   const account = await accountFor(id, body.username ?? "");
   const now = Date.now();
   stepMarket(now);
   syncReported(account, body, now);
   const action = body.action ?? "sync";
-  const fail = (message: string) => ({ error: message, view: present(account, now) });
+  const fail = (message: string) => {
+    const view = present(account, now);
+    return { error: message, view, social: buildSocial(account, now) };
+  };
+  const box = ((account.economy ?? blankEconomy(now)) as EconomyData & { sandbox?: PlayerSandbox }).sandbox;
+  const loanLate = Boolean(box?.loan && box.loan.balance > 0 && now > box.loan.due);
   if (action === "buy-business") {
     const businessId = body.businessId ?? "";
-    const price = businessById(businessId)?.price ?? 0;
+    const price = businessPrice(businessId, now);
     const data = economyOf(account, now);
     if (!knownBusiness(businessId)) return fail("Unknown business.");
+    if (loanLate) return fail("PAY THE LOAN");
     if (!data.levels[businessId]) {
       if (account.cash < price) return fail("NEED CASH");
       account.cash -= price;
@@ -354,6 +397,7 @@ export async function postEconomy(
     const data = economyOf(account, now);
     const level = data.levels[businessId] ?? 0;
     const cost = upgradeCost(businessId, level);
+    if (loanLate) return fail("PAY THE LOAN");
     if (!level || cost === null) return fail("That business cannot be upgraded.");
     if (account.cash < cost) return fail("NEED CASH");
     account.cash -= cost;
@@ -415,8 +459,11 @@ export async function postEconomy(
     data.claimedEvents.push(key);
     data.earnedToday += event.id === "refund" ? 400 * scale : 250 * scale;
   }
+  const socialError = applySocial(account, body, now);
+  if (socialError) return fail(socialError);
   account.businesses = Object.keys(economyOf(account, now).levels);
-  return { view: present(account, now) };
+  const view = present(account, now);
+  return { view, social: buildSocial(account, now) };
 }
 
 function rankOf(id: string): number {
@@ -429,13 +476,15 @@ function rankOf(id: string): number {
 
 function worthOf(account: Account): number {
   const data = account.economy ?? blankEconomy();
-  return netWorth({
-    cash: account.cash,
-    levels: data.levels,
-    shares: data.shares,
-    prices: prices(),
-    items: data.items,
-  });
+  return (
+    netWorth({
+      cash: account.cash,
+      levels: data.levels ?? {},
+      shares: data.shares ?? {},
+      prices: prices(),
+      items: data.items ?? [],
+    }) + assetAdjust(account)
+  );
 }
 
 export type BoardId = "netWorth" | "cash" | "businesses" | "stocks" | "achievements";

@@ -17,6 +17,8 @@ export class Vehicle extends Phaser.Physics.Arcade.Sprite {
   owned = false;
   stolen = false;
   occupied = false;
+  accelScale = 1;
+  turnScale = 1;
   heading: number;
   speed = 0;
   /** Fresh throttle press required after mounting, so a held walk key cannot roll the car. */
@@ -82,7 +84,7 @@ export class Vehicle extends Phaser.Physics.Arcade.Sprite {
 
     const dry = this.gas <= 0;
     const cap = this.maxSpeed * speedScale;
-    const accel = (this.kind === "boat" ? 280 : 640) * speedScale;
+    const accel = (this.kind === "boat" ? 280 : 640) * speedScale * this.accelScale;
     if (!dry && input.up) this.speed = Math.min(cap, this.speed + accel * dt);
     if (!dry && input.down) this.speed = Math.max(-cap * 0.42, this.speed - accel * 0.7 * dt);
     if (dry || !throttle) {
@@ -96,7 +98,7 @@ export class Vehicle extends Phaser.Physics.Arcade.Sprite {
     if (turn !== 0) {
       const pace = Math.min(1, Math.abs(this.speed) / (cap * 0.45));
       const aim = Math.abs(this.speed) < 36 ? 1.05 : 0;
-      const rate = (this.kind === "boat" ? 1.25 : 2.05) * (0.25 + pace) + aim;
+      const rate = ((this.kind === "boat" ? 1.25 : 2.05) * (0.25 + pace) + aim) * this.turnScale;
       const gear = this.speed < -8 ? -1 : 1;
       this.heading += turn * rate * dt * gear;
     }

@@ -61,6 +61,10 @@ export const ACHIEVEMENTS: AchievementDef[] = [
   { id: "stocks-50k", name: "STOCK TRADER", detail: "Make $50,000 profit from stocks." },
   { id: "worth-5m", name: "FIVE MILLION", detail: "Reach $5,000,000 net worth." },
   { id: "goals-10", name: "DAILY REGULAR", detail: "Complete 10 daily objectives.", item: "trophy" },
+  { id: "bounty", name: "BOUNTY HUNTER", detail: "Collect a bounty on a wanted player." },
+  { id: "crew", name: "IN A CREW", detail: "Join or start a crew." },
+  { id: "paid-off", name: "PAID IN FULL", detail: "Pay a loan off." },
+  { id: "checkered", name: "CHECKERED", detail: "Win a race." },
 ];
 
 export type ObjectiveTemplate = { id: string; title: string; goal: number; reward: number };
@@ -71,13 +75,15 @@ export const OBJECTIVE_POOL: ObjectiveTemplate[] = [
   { id: "port", title: "Visit the port", goal: 1, reward: 200 },
   { id: "biz", title: "Earn business income", goal: 1, reward: 300 },
   { id: "upgrade", title: "Purchase an upgrade", goal: 1, reward: 400 },
+  { id: "robbery", title: "Complete a robbery", goal: 1, reward: 500 },
+  { id: "race", title: "Finish a race", goal: 1, reward: 700 },
 ];
 
 export type WorldEvent = { id: string; name: string; detail: string; claimable: boolean };
 
 const EVENTS: WorldEvent[] = [
-  { id: "boom", name: "MARKET BOOM", detail: "The island is busy. Stock prices keep their own random pace.", claimable: false },
-  { id: "crash", name: "MARKET CRASH", detail: "The island is quiet. Stock prices keep their own random pace.", claimable: false },
+  { id: "boom", name: "MARKET BOOM", detail: "Every stock is up 12% until this passes.", claimable: false },
+  { id: "crash", name: "MARKET CRASH", detail: "Every stock is down 7%. Insured businesses keep their pay.", claimable: false },
   { id: "shipment", name: "PORT SHIPMENT", detail: "Claim a payout at the port.", claimable: true },
   { id: "refund", name: "TAX REFUND", detail: "A cash refund is waiting.", claimable: true },
   { id: "rush", name: "BUSINESS BOOM", detail: "Owned businesses pay double for now.", claimable: false },
@@ -89,6 +95,7 @@ export type QuoteState = { id: string; name: string; price: number; history: num
 export type EconomyView = {
   cash: number;
   netWorth: number;
+  extraWorth: number;
   username: string;
   rank: number;
   levels: Record<string, number>;
@@ -218,8 +225,22 @@ export function currentEvent(now: number): WorldEvent & { endsIn: number } {
   return { ...event, endsIn: EVENT_MS - (now % EVENT_MS) };
 }
 
-export function incomeScaleFor(now: number): number {
-  return currentEvent(now).id === "rush" ? 2 : 1;
+export function incomeScaleFor(now: number, insured = false): number {
+  const id = currentEvent(now).id;
+  if (id === "rush") return 2;
+  if (id === "crash" && !insured) return 0.5;
+  return 1;
+}
+
+/** Clock price, then the shared world-event move. Same number for every player. */
+export function tradedQuotes(now = Date.now()): QuoteState[] {
+  const id = currentEvent(now).id;
+  const factor = id === "boom" ? 1.12 : id === "crash" ? 0.93 : 1;
+  return marketQuotes(now).map((quote) => ({
+    ...quote,
+    price: Math.round(quote.price * factor),
+    history: quote.history.map((price, index) => (index === quote.history.length - 1 ? Math.round(price * factor) : price)),
+  }));
 }
 
 export function rewardScaleFor(now: number): number {

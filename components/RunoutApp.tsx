@@ -5,6 +5,8 @@ import GameCanvas from "@/components/game/GameCanvas";
 import BustOffer from "@/components/hud/BustOffer";
 import Dashboard from "@/components/hud/Dashboard";
 import DepthLayer, { type BoardName, type DepthPanel } from "@/components/hud/DepthLayer";
+import Phone from "@/components/hud/Phone";
+import type { SocialView } from "@/lib/sandbox/catalog";
 import GroceryCounter from "@/components/hud/GroceryCounter";
 import Hud from "@/components/hud/Hud";
 import IslandActions from "@/components/hud/IslandActions";
@@ -90,6 +92,8 @@ export default function RunoutApp() {
   const [canReturn, setCanReturn] = useState(false);
   const [mode, setMode] = useState<"single" | "multi">("single");
   const [view, setView] = useState<EconomyView | null>(null);
+  const [social, setSocial] = useState<SocialView | null>(null);
+  const [cityOpen, setCityOpen] = useState(false);
   const [subject, setSubject] = useState<EconomyView | null>(null);
   const [panel, setPanel] = useState<DepthPanel>(null);
   const [spot, setSpot] = useState<{ id: string; name: string } | null>(null);
@@ -104,6 +108,8 @@ export default function RunoutApp() {
   const modeRef = useRef(mode);
   modeRef.current = mode;
   const viewRef = useRef<EconomyView | null>(null);
+  const posRef = useRef(pos);
+  posRef.current = pos;
   const heldRef = useRef<string[]>([]);
   const usernameRef = useRef(username);
   usernameRef.current = username;
@@ -188,6 +194,21 @@ export default function RunoutApp() {
       }),
       gameBus.on("visit-port", () => {
         void postRef.current({ action: "visit" }, true);
+      }),
+      gameBus.on("rob-site", (site) => {
+        void postRef.current({ action: "rob", businessId: site.id, x: site.x, y: site.y }, false);
+      }),
+      gameBus.on("heat-clear", (reason) => {
+        void postRef.current({ action: "heat-clear", eventId: reason }, true);
+      }),
+      gameBus.on("flag-stolen", (id) => {
+        void postRef.current({ action: "stolen", businessId: id }, true);
+      }),
+      gameBus.on("drop-claim", (spot) => {
+        void postRef.current({ action: "drop-claim", x: spot.x, y: spot.y }, true);
+      }),
+      gameBus.on("race-step", (spot) => {
+        void postRef.current({ action: "race-step", x: spot.x, y: spot.y }, true);
       }),
       gameBus.on("menu", () => {
         const single = modeRef.current === "single";
@@ -339,10 +360,16 @@ export default function RunoutApp() {
           items: economy ? economy.items.map((item) => item.id) : saved?.items,
           stockProfit: economy?.realized ?? saved?.stockProfit,
           objectivesDone: economy?.objectivesDone ?? saved?.objectivesDone,
+          x: posRef.current?.x,
+          y: posRef.current?.y,
           ...extra,
         }),
       });
-      const data = (await response.json()) as { view?: EconomyView; reason?: string };
+      const data = (await response.json()) as { view?: EconomyView; social?: SocialView; reason?: string };
+      if (data.social) {
+        setSocial(data.social);
+        gameBus.emit("social", data.social);
+      }
       if (data.view) {
         viewRef.current = data.view;
         setView(data.view);
@@ -581,6 +608,9 @@ export default function RunoutApp() {
             setSubject(null);
             setPanel(next);
           }}
+          onCity={() => setCityOpen((open) => !open)}
+          flash={social?.flash ? `${social.flash.name} · ${social.flash.detail}` : null}
+          dropLive={Boolean(social?.drop?.live)}
         />
       )}
       {screen === "play" && (
@@ -640,6 +670,16 @@ export default function RunoutApp() {
           note={bustNote}
           onWatch={() => void softenBust()}
           onTake={() => gameBus.emit("bust-resolve", "half")}
+        />
+      )}
+      {screen === "play" && (
+        <Phone
+          social={social}
+          open={cityOpen}
+          onClose={() => setCityOpen(false)}
+          onAction={(action, extra) => {
+            void postEconomy({ action, ...extra, x: posRef.current?.x, y: posRef.current?.y }, false);
+          }}
         />
       )}
       {screen === "play" && stocks && (

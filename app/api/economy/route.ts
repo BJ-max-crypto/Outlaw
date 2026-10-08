@@ -1,12 +1,14 @@
 import { playerId } from "@/lib/server/identity";
-import { postEconomy, readEconomy } from "@/lib/server/ledger";
+import { postEconomy, readEconomy, readSocial } from "@/lib/server/ledger";
 
 export async function GET(request: Request) {
   const id = await playerId(request);
   if (!id) return Response.json({ view: null }, { status: 401 });
   const url = new URL(request.url);
-  const view = await readEconomy(id, url.searchParams.get("username") ?? "");
-  return Response.json({ view });
+  const username = url.searchParams.get("username") ?? "";
+  const view = await readEconomy(id, username);
+  const social = await readSocial(id, username);
+  return Response.json({ view, social });
 }
 
 export async function POST(request: Request) {
@@ -34,6 +36,6 @@ export async function POST(request: Request) {
     eventId?: string;
   };
   const result = await postEconomy(id, body);
-  if (result.error) return Response.json({ ok: false, reason: result.error, view: result.view }, { status: 400 });
-  return Response.json({ ok: true, view: result.view });
+  if (result.error) return Response.json({ ok: false, reason: result.error, view: result.view, social: result.social }, { status: 400 });
+  return Response.json({ ok: true, view: result.view, social: result.social });
 }
