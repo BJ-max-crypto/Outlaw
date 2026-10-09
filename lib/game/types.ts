@@ -147,6 +147,7 @@ export type GameEventMap = {
   ledger: import("@/lib/economy/model").EconomyView;
   "ledger-deny": string;
   "business-buy": string;
+  "business-upgrade": string;
   "visit-port": undefined;
   "owned-spot": { id: string; name: string } | null;
   social: import("@/lib/sandbox/catalog").SocialView;

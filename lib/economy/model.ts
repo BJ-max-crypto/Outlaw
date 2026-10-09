@@ -1,6 +1,9 @@
 import { businessById, BUSINESSES, STOCKS } from "@/game/world/catalog";
 
 export const MAX_BUSINESS_LEVEL = 3;
+
+/** Just bought, then each upgrade, then the fastest. */
+const BUSINESS_INTERVAL_MS = [5_000, 2_000, 500] as const;
 export const OFFLINE_CAP_MIN = 480;
 export const ONLINE_GAP_MS = 30_000;
 export const ROBBERY_GRANT = 700;
@@ -153,13 +156,26 @@ export function levelMultiplier(level: number): number {
   return 2 ** (safe - 1);
 }
 
-export function businessTick(id: string, level: number, scale = 1): number {
+/** How long between paychecks. Level 1 is every 5 seconds. The last upgrade is every half second. */
+export function businessInterval(level: number): number {
+  const index = Math.min(BUSINESS_INTERVAL_MS.length, Math.max(1, Math.floor(level))) - 1;
+  return BUSINESS_INTERVAL_MS[index];
+}
+
+export function formatRate(ms: number): string {
+  const seconds = ms / 1000;
+  return Number.isInteger(seconds) ? `${seconds}s` : `${seconds}s`;
+}
+
+/** Dollars paid each time the business timer fires. Upgrades change how often, not this amount. */
+export function businessTick(id: string, _level: number, scale = 1): number {
   const base = businessById(id)?.income ?? 0;
-  return Math.round(base * levelMultiplier(level) * scale);
+  return Math.round(base * scale);
 }
 
 export function businessPerMinute(id: string, level: number, scale = 1): number {
-  return businessTick(id, level, scale) * 15;
+  const ticks = 60_000 / businessInterval(level);
+  return Math.round(businessTick(id, level, scale) * ticks);
 }
 
 export function upgradeCost(id: string, level: number): number | null {

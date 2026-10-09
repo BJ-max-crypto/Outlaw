@@ -5,6 +5,7 @@ import {
   OBJECTIVE_POOL,
   blankEconomy,
   businessPerMinute,
+  businessTick,
   businessValue,
   currentEvent,
   dayKey,
@@ -108,6 +109,11 @@ function rollDay(data: EconomyData, now: number): void {
 
 function businessMinutes(data: EconomyData, scale: number): number {
   return Object.entries(data.levels).reduce((sum, [id, level]) => sum + businessPerMinute(id, level, scale), 0);
+}
+
+/** One extra paycheck so a sync that lands just after a tick does not claw the cash back. */
+function businessSlack(data: EconomyData, scale: number, rewardScale: number): number {
+  return Object.entries(data.levels).reduce((sum, [id, level]) => sum + Math.ceil(businessTick(id, level, scale) * rewardScale), 0);
 }
 
 function applyOffline(account: Account, now: number): void {
@@ -304,7 +310,7 @@ export function syncReported(account: Account, report: Report, now = Date.now())
       const minutes = gap / 60_000;
       const scale = account.rewardUntil && account.rewardUntil > now ? Math.min(2, account.rewardScale ?? 1) : 1;
       const job = report.onShift && account.employed ? TUNING.jobPay * 15 * minutes * scale * TUNING.payStreakCap : 0;
-      const business = businessMinutes(data, incomeScaleFor(now)) * minutes * scale;
+      const business = businessMinutes(data, incomeScaleFor(now)) * minutes * scale + businessSlack(data, incomeScaleFor(now), scale);
       const island = heldPayPerMinute(account.id) * minutes * scale;
       const robbery = now - data.robberyAt >= ROBBERY_GAP_MS ? ROBBERY_GRANT : 0;
       const stake = account.stakeCredit ?? 0;

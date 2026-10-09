@@ -8,11 +8,11 @@ export function clerkConfigured(): boolean {
 }
 
 /**
- * When Clerk is configured, the player id is only the signed-in user id.
- * A guest header is accepted only while those keys are absent.
+ * A signed-in Clerk user always wins. Otherwise a guest id is accepted, even when
+ * Clerk is configured, so someone can play without an account.
  */
-export function resolvePlayerId(clerk: boolean, userId: string | null | undefined, guestHeader: string | null): string | null {
-  if (clerk) return userId || null;
+export function resolvePlayerId(_clerk: boolean, userId: string | null | undefined, guestHeader: string | null): string | null {
+  if (userId) return userId;
   if (guestHeader && GUEST_PLAYER_ID.test(guestHeader)) return guestHeader;
   return null;
 }

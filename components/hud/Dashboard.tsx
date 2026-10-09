@@ -7,6 +7,8 @@ import type { SessionView } from "@/lib/game/types";
 type DashboardProps = {
   ready: boolean;
   clerkEnabled: boolean;
+  /** Continued from the entry screen without an account. */
+  guestPlay: boolean;
   username: string;
   canContinue: boolean;
   session: SessionView | null;
@@ -22,12 +24,13 @@ type DashboardProps = {
 
 export default function Dashboard(props: DashboardProps) {
   if (props.clerkEnabled) return <ClerkDashboard {...props} />;
-  return <DashboardBody {...props} loaded signedIn />;
+  return <DashboardBody {...props} loaded signedIn account={false} />;
 }
 
 function ClerkDashboard(props: DashboardProps) {
   const { isLoaded, isSignedIn } = useAuth();
-  return <DashboardBody {...props} loaded={isLoaded} signedIn={Boolean(isSignedIn)} />;
+  const account = Boolean(isLoaded && isSignedIn);
+  return <DashboardBody {...props} loaded={isLoaded} signedIn={isLoaded && (account || props.guestPlay)} account={account} />;
 }
 
 function DashboardBody({
@@ -46,7 +49,8 @@ function DashboardBody({
   onStart,
   loaded,
   signedIn,
-}: DashboardProps & { loaded: boolean; signedIn: boolean }) {
+  account,
+}: DashboardProps & { loaded: boolean; signedIn: boolean; account: boolean }) {
   const [draft, setDraft] = useState(username);
   const [code, setCode] = useState("");
   const named = username.trim().length >= 2;
@@ -62,22 +66,6 @@ function DashboardBody({
           </p>
 
           {clerkEnabled && !loaded && <p className="mt-8 text-sm tracking-[0.16em] text-[#a39e94]">CHECKING ACCOUNT</p>}
-
-          {clerkEnabled && loaded && !signedIn && (
-            <div className="mt-8 flex flex-col items-start gap-3">
-              <SignInButton mode="modal">
-                <button type="button" className="rounded-full bg-[#e25b2a] px-8 py-3 text-sm font-semibold tracking-[0.18em] text-[#1a0d08]">
-                  SIGN IN
-                </button>
-              </SignInButton>
-              <SignUpButton mode="modal">
-                <button type="button" className="text-sm font-medium tracking-[0.12em] text-[#d7c08a]">
-                  CREATE ACCOUNT
-                </button>
-              </SignUpButton>
-              <p className="max-w-sm text-sm text-[#a39e94]">Sign up, then choose a username. Progress and multiplayer use that account.</p>
-            </div>
-          )}
 
           {signedIn && !named && (
             <form
@@ -147,9 +135,26 @@ function DashboardBody({
                   JOIN
                 </button>
               </form>
-              {clerkEnabled && signedIn && (
+              {account && (
                 <div className="pt-2">
                   <UserButton />
+                </div>
+              )}
+              {clerkEnabled && !account && (
+                <div className="mt-2 flex flex-col items-start gap-2">
+                  <p className="max-w-sm text-sm text-[#a39e94]">If you want to save your progress, sign up or log in.</p>
+                  <div className="flex gap-4">
+                    <SignUpButton mode="modal">
+                      <button type="button" className="text-sm font-medium tracking-[0.12em] text-[#d7c08a]">
+                        SIGN UP
+                      </button>
+                    </SignUpButton>
+                    <SignInButton mode="modal">
+                      <button type="button" className="text-sm font-medium tracking-[0.12em] text-[#d7c08a]">
+                        LOG IN
+                      </button>
+                    </SignInButton>
+                  </div>
                 </div>
               )}
             </div>

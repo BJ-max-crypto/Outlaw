@@ -11,7 +11,7 @@ import { rectContains } from "@/game/map/geometry";
 import { MAP_SCALE, isWaterWorld, landIslandIndex, setIslandOrigins } from "@/game/map/waterMask";
 import { getMatch, heldIncome, islandIncome, islandOrigin, ISLAND_SPAN, orderIslands, setMatch, takePendingProfile } from "@/game/mode/match";
 import type { EconomyView } from "@/lib/economy/model";
-import { businessPerMinute, marketQuotes, tradedQuotes, upgradeCost } from "@/lib/economy/model";
+import { businessInterval, businessTick, formatRate, marketQuotes, tradedQuotes, upgradeCost } from "@/lib/economy/model";
 import { garageById, RACE_POINTS, type SocialView } from "@/lib/sandbox/catalog";
 import { formatCash } from "@/lib/game/format";
 import { CityState } from "@/game/state/CityState";
@@ -59,6 +59,7 @@ export class CityScene extends Phaser.Scene {
   private couldAfford = false;
   private sawMaxStreak = false;
   private buyLock = false;
+  private ledgerSeen = false;
   private serverMarket = false;
   private wasInPort = false;
   private lastSpot: string | null = null;
@@ -175,7 +176,8 @@ export class CityScene extends Phaser.Scene {
     this.couldAfford = false;
     this.sawMaxStreak = false;
     this.buyLock = false;
-    this.serverMarket = false;
+    this.ledgerSeen = false;
+    this.serverMarket = false
     this.wasInPort = false;
     this.lastSpot = null;
     this.viewZoom = 1.52;
@@ -905,7 +907,11 @@ export class CityScene extends Phaser.Scene {
       return;
     }
     const spot = this.businessAt();
-    if (!spot || this.state.owns(spot.id)) return;
+    if (!spot) return;
+    if (this.state.owns(spot.id)) {
+      this.requestUpgrade(spot.id);
+      return;
+    }
     this.requestBusiness(spot.id);
   }
 
@@ -913,6 +919,27 @@ export class CityScene extends Phaser.Scene {
     if (this.buyLock || this.state.owns(id)) return;
     this.buyLock = true;
     gameBus.emit("business-buy", id);
+  }
+
+  private requestUpgrade(id: string): void {
+    if (this.buyLock || !this.state.owns(id)) return;
+    const cost = upgradeCost(id, this.state.levelOf(id));
+    if (cost === null) return;
+    if (this.state.cash < cost) {
+      this.popup(this.player.x, this.player.y - 28, "NEED CASH", "#f4f1ea");
+      return;
+    }
+    this.buyLock = true;
+    gameBus.emit("business-upgrade", id);
+  }
+
+  private rateLine(id: string): string {
+    const level = this.state.levelOf(id);
+    const pay = businessTick(id, level, this.state.incomeScale);
+    const every = formatRate(businessInterval(level));
+    const cost = upgradeCost(id, level);
+    if (cost === null) return `PAYS ${formatCash(pay)} EVERY ${every}`;
+    return `PAYS ${formatCash(pay)} EVERY ${every} · E UPGRADE TO ${formatRate(businessInterval(level + 1))} ${formatCash(cost)}`;
   }
 
   private stealFocused(): void {
@@ -1186,6 +1213,7 @@ export class CityScene extends Phaser.Scene {
 
   private applyLedger(view: EconomyView): void {
     this.buyLock = false;
+    const previous = this.state.holdings().levels;
     this.state.applyHoldings({
       cash: view.cash,
       levels: view.levels,
@@ -1206,6 +1234,15 @@ export class CityScene extends Phaser.Scene {
       }
     }
     if (view.fresh.length > 0) this.flash(view.fresh.join(" · "));
+    if (this.ledgerSeen) {
+      for (const [id, level] of Object.entries(view.levels)) {
+        const old = previous[id] ?? 0;
+        if (level <= old) continue;
+        const name = businessById(id)?.name ?? "STORE";
+        this.flash(`${name} EVERY ${formatRate(businessInterval(level))}`);
+      }
+    }
+    this.ledgerSeen = true;
     if (this.groceryOpen) this.emitGrocery();
     if (this.stockOpen) this.emitStocks();
     this.pushHud();
@@ -1622,8 +1659,7 @@ export class CityScene extends Phaser.Scene {
     } else if (spot && !this.state.owns(spot.id)) {
       lines.push(this.canRob(spot.id) ? `E BUY $${spot.price} · HOLD R TO ROB` : "COME BACK LATER");
     } else if (spot) {
-      const level = this.state.levelOf(spot.id);
-      lines.push(`LEVEL ${level} · ${formatCash(businessPerMinute(spot.id, level, this.state.incomeScale))}/MIN`);
+      lines.push(this.rateLine(spot.id));
     }
     if (this.state.food.length > 0) lines.push("G EAT");
     return lines.length > 0 ? lines.join(" · ") : null;

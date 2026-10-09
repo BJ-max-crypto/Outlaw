@@ -39,9 +39,14 @@ function GuestIdentity({ children }: { children: React.ReactNode }) {
 
 function ClerkIdentity({ children }: { children: React.ReactNode }) {
   const { isLoaded, isSignedIn, userId } = useAuth();
-  const id = isSignedIn && userId ? userId : "";
+  const [guestId, setGuestId] = useState("");
+  useEffect(() => {
+    setGuestId(localPlayerId());
+  }, []);
+  const accountId = isSignedIn && userId ? userId : "";
+  const id = accountId || guestId;
   return (
-    <PlayerIdentityProvider value={{ id, loaded: Boolean(isLoaded), signedIn: Boolean(isSignedIn) }}>
+    <PlayerIdentityProvider value={{ id, loaded: Boolean(isLoaded) && id.length > 0, signedIn: Boolean(accountId) }}>
       {children}
     </PlayerIdentityProvider>
   );

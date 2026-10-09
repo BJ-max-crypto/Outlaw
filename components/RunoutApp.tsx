@@ -17,6 +17,7 @@ import StockDesk from "@/components/hud/StockDesk";
 import { currentGame } from "@/game/createGame";
 import { getMatch, orderIslands, saleIslands, setMatch, setPendingProfile, shareSpot, viewSpot, type IslandCard, type SharedSpot } from "@/game/mode/match";
 import { primeAudio } from "@/game/audio/siren";
+import SaveProgressGate from "@/components/auth/SaveProgressGate";
 import { ADS_ENABLED } from "@/lib/ads/enabled";
 import { TUNING } from "@/game/tuning";
 import type { RewardPayload } from "@/lib/ads/gptRewarded";
@@ -31,6 +32,7 @@ import type { ShopReward } from "@/lib/shop/rewards";
 type Screen = "dashboard" | "play";
 
 const clerkEnabled = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
+const GUEST_ENTRY_KEY = "runout-guest-entry";
 
 const initialHud: HudSnapshot = {
   cash: TUNING.startingCash,
@@ -80,6 +82,8 @@ export default function RunoutApp() {
   const selfRef = useRef(identity.id);
   selfRef.current = identity.id;
   const [ready, setReady] = useState(false);
+  const [guestPlay, setGuestPlay] = useState(false);
+  const [entryReady, setEntryReady] = useState(!clerkEnabled);
   const [screen, setScreen] = useState<Screen>("dashboard");
   const [username, setUsername] = useState("");
   const [hud, setHud] = useState<HudSnapshot>(initialHud);
@@ -132,6 +136,23 @@ export default function RunoutApp() {
   const playerId = (): string => selfRef.current;
 
   useEffect(() => {
+    if (!clerkEnabled) return;
+    setGuestPlay(window.sessionStorage.getItem(GUEST_ENTRY_KEY) === "1");
+    setEntryReady(true);
+  }, []);
+
+  const enterAsGuest = () => {
+    window.sessionStorage.setItem(GUEST_ENTRY_KEY, "1");
+    setGuestPlay(true);
+  };
+
+  useEffect(() => {
+    if (!identity.signedIn) return;
+    window.sessionStorage.removeItem(GUEST_ENTRY_KEY);
+    setGuestPlay(false);
+  }, [identity.signedIn]);
+
+  useEffect(() => {
     if (!identity.loaded) return;
     const id = identity.id;
     if (!id) {
@@ -156,7 +177,7 @@ export default function RunoutApp() {
   }, [identity.loaded, identity.id]);
 
   useEffect(() => {
-    if (!clerkEnabled || !identity.loaded || identity.signedIn) return;
+    if (!clerkEnabled || !identity.loaded || identity.signedIn || guestPlay) return;
     setSession(null);
     if (screen === "play") {
       currentGame()?.scene.pause("city");
@@ -164,7 +185,7 @@ export default function RunoutApp() {
       setCanReturn(false);
       setScreen("dashboard");
     }
-  }, [identity.loaded, identity.signedIn, screen]);
+  }, [identity.loaded, identity.signedIn, guestPlay, screen]);
 
   useEffect(() => {
     const unsub = [
@@ -201,6 +222,9 @@ export default function RunoutApp() {
       gameBus.on("owned-spot", setSpot),
       gameBus.on("business-buy", (id) => {
         void postRef.current({ action: "buy-business", businessId: id }, false);
+      }),
+      gameBus.on("business-upgrade", (id) => {
+        void postRef.current({ action: "upgrade", businessId: id }, false);
       }),
       gameBus.on("stock-order", (order: StockOrder) => {
         void postRef.current({ action: "trade", stockId: order.id, quantity: order.quantity, side: order.side }, false);
@@ -642,10 +666,14 @@ export default function RunoutApp() {
   return (
     <main className="relative h-dvh w-full overflow-hidden bg-[#0e0f12]">
       <GameCanvas onReady={setReady} />
-      {screen === "dashboard" && (
+      {screen === "dashboard" && clerkEnabled && entryReady && identity.loaded && !identity.signedIn && !guestPlay && (
+        <SaveProgressGate onGuest={enterAsGuest} />
+      )}
+      {screen === "dashboard" && (!clerkEnabled || (entryReady && !(identity.loaded && !identity.signedIn && !guestPlay))) && (
         <Dashboard
-          ready={ready && identity.loaded && (!clerkEnabled || identity.signedIn)}
+          ready={ready && identity.loaded && Boolean(identity.id)}
           clerkEnabled={clerkEnabled}
+          guestPlay={guestPlay && !identity.signedIn}
           username={username}
           canContinue={canReturn}
           session={session && session.status === "lobby" ? session : null}

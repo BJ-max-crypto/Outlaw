@@ -1,5 +1,5 @@
 import type { HudSnapshot } from "@/lib/game/types";
-import { businessTick, businessValue, itemById, netWorth, portfolioValue } from "@/lib/economy/model";
+import { businessInterval, businessTick, businessValue, itemById, netWorth, portfolioValue } from "@/lib/economy/model";
 import { formatStreak, payStreakMultiplier, TUNING } from "@/game/tuning";
 import { businessById, type FoodItem } from "@/game/world/catalog";
 
@@ -26,6 +26,7 @@ export class CityState {
   incomeScale = 1;
   private jobMs = 0;
   private bizMs = 0;
+  private bizClock = new Map<string, number>();
   /** Income taken from islands you bought, paid on the business timer. */
   islandPay = 0;
   /** Someone else bought this island, so its wages and store income leave with it. */
@@ -185,16 +186,26 @@ export class CityState {
         parts.push({ label: `SHIFT ×${formatStreak(mult)}`, amount, tone: "job" });
       }
     }
+    const scale = this.earningsScale;
+    if (!this.incomeFrozen) {
+      for (const id of this.ownedBusinesses) {
+        const wait = businessInterval(this.levelOf(id));
+        const clock = (this.bizClock.get(id) ?? 0) + delta;
+        if (clock < wait) {
+          this.bizClock.set(id, clock);
+          continue;
+        }
+        this.bizClock.set(id, clock - wait);
+        const amount = Math.round(businessTick(id, this.levelOf(id), this.incomeScale) * scale);
+        if (amount > 0) parts.push({ label: businessById(id)?.name ?? "STORE", amount, tone: "business" });
+      }
+    }
+    for (const id of this.bizClock.keys()) {
+      if (!this.ownedBusinesses.has(id)) this.bizClock.delete(id);
+    }
     this.bizMs += delta;
     if (this.bizMs >= TUNING.jobIntervalMs) {
       this.bizMs -= TUNING.jobIntervalMs;
-      const scale = this.earningsScale;
-      if (!this.incomeFrozen) {
-        for (const id of this.ownedBusinesses) {
-          const amount = Math.round(businessTick(id, this.levelOf(id), this.incomeScale) * scale);
-          if (amount > 0) parts.push({ label: businessById(id)?.name ?? "STORE", amount, tone: "business" });
-        }
-      }
       const islands = Math.round(this.islandPay * scale);
       if (islands > 0) parts.push({ label: "ISLANDS", amount: islands, tone: "island" });
     }

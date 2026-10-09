@@ -2,7 +2,13 @@
 
 import { useState } from "react";
 import { formatCash } from "@/lib/game/format";
-import type { EconomyView } from "@/lib/economy/model";
+import { businessInterval, formatRate, type EconomyView } from "@/lib/economy/model";
+
+function paycheck(incomePerMin: number, level: number): number {
+  const ticks = 60_000 / businessInterval(level);
+  if (!Number.isFinite(ticks) || ticks <= 0) return 0;
+  return Math.round(incomePerMin / ticks);
+}
 
 export type DepthPanel = "goals" | "profile" | "ranks" | null;
 export type BoardName = "netWorth" | "cash" | "businesses" | "stocks" | "achievements";
@@ -77,7 +83,7 @@ export default function DepthLayer({
         <div className="pointer-events-auto absolute bottom-36 left-1/2 z-20 w-[min(24rem,calc(100%-2rem))] -translate-x-1/2 rounded-2xl border border-white/10 bg-[#17191e]/95 p-4 shadow-xl">
           <p className="text-[10px] font-semibold tracking-[0.28em] text-[#a39e94]">{spot.name}</p>
           <p className="mt-1 text-sm text-[#f4f1ea]">
-            Level {owned.level} · {formatCash(owned.incomePerMin)}/min · Worth {formatCash(owned.value)}
+            Pays {formatCash(paycheck(owned.incomePerMin, owned.level))} every {formatRate(businessInterval(owned.level))} · {formatCash(owned.incomePerMin)}/min
           </p>
           {owned.upgradeCost !== null && (
             <button
@@ -85,7 +91,7 @@ export default function DepthLayer({
               onClick={() => onUpgrade(owned.id)}
               className="mt-3 rounded-full bg-[#e25b2a] px-4 py-1.5 text-[11px] font-semibold tracking-[0.14em] text-[#1a0d08]"
             >
-              UPGRADE {formatCash(owned.upgradeCost)}
+              EVERY {formatRate(businessInterval(owned.level + 1))} · {formatCash(owned.upgradeCost)}
             </button>
           )}
         </div>
@@ -145,7 +151,7 @@ export default function DepthLayer({
                   {view.businesses.length === 0 && <li className="text-[#a39e94]">None yet</li>}
                   {view.businesses.map((business) => (
                     <li key={business.id}>
-                      {business.name} · LV {business.level} · {formatCash(business.incomePerMin)}/min
+                      {business.name} · every {formatRate(businessInterval(business.level))} · {formatCash(business.incomePerMin)}/min
                     </li>
                   ))}
                 </ul>
