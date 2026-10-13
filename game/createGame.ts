@@ -1,11 +1,11 @@
 import Phaser from "phaser";
-import { HeistScene } from "./scenes/HeistScene";
+import { OutrunScene } from "./scenes/OutrunScene";
 
 export function createGame(parent: HTMLElement): Phaser.Game {
   const game = new Phaser.Game({
     type: Phaser.AUTO,
     parent,
-    backgroundColor: "#0e0f12",
+    backgroundColor: "#070b10",
     banner: false,
     scale: {
       mode: Phaser.Scale.RESIZE,
@@ -19,12 +19,12 @@ export function createGame(parent: HTMLElement): Phaser.Game {
         debug: false,
       },
     },
-    scene: [HeistScene],
+    scene: [OutrunScene],
     input: { keyboard: true },
   });
 
   if (process.env.NODE_ENV !== "production") {
-    (window as Window & { __OUTLAW__?: Phaser.Game }).__OUTLAW__ = game;
+    (window as Window & { __OUTRUN__?: Phaser.Game }).__OUTRUN__ = game;
   }
 
   return game;
